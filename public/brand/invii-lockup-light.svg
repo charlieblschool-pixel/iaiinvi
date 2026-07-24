@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="440" height="120" viewBox="0 0 440 120" role="img" aria-label="invii.ai logo">
+  <title>invii.ai logo — light background</title>
+  <g transform="translate(6,14) scale(0.82)">
+    <g fill="#4f6bff">
+      <rect x="16" y="60" width="16" height="34" rx="8"/><circle cx="24" cy="46" r="8"/>
+      <rect x="46" y="46" width="16" height="48" rx="8"/><circle cx="54" cy="32" r="8"/>
+      <rect x="76" y="32" width="16" height="62" rx="8"/><circle cx="84" cy="18" r="8"/>
+    </g>
+  </g>
+  <text x="112" y="80" font-family="'Helvetica Neue',Helvetica,Arial,sans-serif" font-size="58" font-weight="500" letter-spacing="-2" fill="#16181c">invii<tspan fill="#4f6bff">.ai</tspan></text>
+</svg>

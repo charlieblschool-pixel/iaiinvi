@@ -1,0 +1,276 @@
+// invii.ai schema — Postgres (via @prisma/adapter-pg). Set DATABASE_URL to a
+// Postgres connection string in .env.local.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------- Auth & tenancy ----------
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  passwordHash  String?
+  image         String?
+  createdAt     DateTime  @default(now())
+
+  accounts    Account[]
+  sessions    Session[]
+  memberships Membership[]
+  activity    ActivityLogEntry[]
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  STAFF
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+
+  memberships Membership[]
+  locations   Location[]
+  vendors     Vendor[]
+  categories  Category[]
+  products    Product[]
+  suggestions ReorderSuggestion[]
+  activity    ActivityLogEntry[]
+  subscription Subscription?
+  invoices    Invoice[]
+}
+
+model Membership {
+  id             String   @id @default(cuid())
+  role           Role     @default(STAFF)
+  createdAt      DateTime @default(now())
+  userId         String
+  organizationId String
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+}
+
+// ---------- Inventory domain ----------
+
+enum LocationType {
+  STOREROOM
+  RETAIL_SHELF
+  BACKBAR
+  IN_USE
+  WAREHOUSE
+  DISPLAY
+  FRONT_COUNTER
+  MOBILE_VAN
+  BACK_OFFICE
+}
+
+model Location {
+  id             String       @id @default(cuid())
+  name           String
+  type           LocationType
+  organizationId String
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  stockLevels  StockLevel[]
+
+  @@index([organizationId])
+}
+
+model Vendor {
+  id             String   @id @default(cuid())
+  name           String
+  leadTimeDays   Int
+  organizationId String
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  products     Product[]
+
+  @@index([organizationId])
+}
+
+model Category {
+  id             String   @id @default(cuid())
+  name           String
+  organizationId String
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  products     Product[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+}
+
+model Product {
+  id             String   @id @default(cuid())
+  name           String
+  unitLabel      String // e.g. "bottle", "jar", "canister"
+  casePackSize   Int      @default(1)
+  unitCost       Float    @default(0)
+  avgWeeklyUsage Float    @default(0)
+  autoReorder    Boolean  @default(false)
+  organizationId String
+  vendorId       String?
+  categoryId     String?
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  vendor       Vendor?             @relation(fields: [vendorId], references: [id])
+  category     Category?           @relation(fields: [categoryId], references: [id])
+  stockLevels  StockLevel[]
+  suggestions  ReorderSuggestion[]
+
+  @@index([organizationId])
+}
+
+model StockLevel {
+  id           String @id @default(cuid())
+  onHand       Int    @default(0)
+  reorderPoint Int    @default(0)
+  productId    String
+  locationId   String
+
+  product  Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, locationId])
+}
+
+// ---------- AI reorder engine ----------
+
+enum SuggestionStatus {
+  PENDING
+  APPROVED
+  SKIPPED
+  AUTO_CHARGED
+}
+
+model ReorderSuggestion {
+  id                  String           @id @default(cuid())
+  quantity            Int
+  unitCost            Float
+  totalCost           Float
+  reasoning           String
+  status              SuggestionStatus @default(PENDING)
+  createdAt           DateTime         @default(now())
+  resolvedAt          DateTime?
+  stripePaymentIntentId String?
+  chargeError         String?
+  productId           String
+  organizationId       String
+  invoiceId            String?
+
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invoice      Invoice?     @relation(fields: [invoiceId], references: [id])
+
+  @@index([organizationId])
+}
+
+// ---------- Activity & billing ----------
+
+enum ActivityType {
+  STOCK_ADJUSTED
+  SUGGESTION_CREATED
+  SUGGESTION_APPROVED
+  SUGGESTION_SKIPPED
+  AUTO_CHARGED
+  SETTINGS_CHANGED
+  MEMBER_INVITED
+}
+
+model ActivityLogEntry {
+  id             String       @id @default(cuid())
+  type           ActivityType
+  message        String
+  createdAt      DateTime     @default(now())
+  organizationId String
+  userId         String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User?        @relation(fields: [userId], references: [id])
+
+  @@index([organizationId])
+}
+
+enum PlanTier {
+  STANDARD
+}
+
+model Subscription {
+  id                    String    @id @default(cuid())
+  plan                  PlanTier  @default(STANDARD)
+  status                String? // active | past_due | canceled | incomplete
+  stripeCustomerId      String?
+  stripeSubscriptionId  String?
+  stripePaymentMethodId String?
+  cardBrand             String?
+  cardLast4             String?
+  currentPeriodEnd      DateTime?
+  organizationId        String    @unique
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model Invoice {
+  id             String   @id @default(cuid())
+  periodStart    DateTime
+  periodEnd      DateTime
+  totalAmount    Float
+  itemCount      Int
+  createdAt      DateTime @default(now())
+  organizationId String
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  charges      ReorderSuggestion[]
+
+  @@unique([organizationId, periodStart])
+  @@index([organizationId])
+}

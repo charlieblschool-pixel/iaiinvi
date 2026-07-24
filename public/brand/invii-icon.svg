@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-label="invii app icon">
+  <title>invii app icon</title>
+  <rect width="256" height="256" rx="56" fill="#4f6bff"/>
+  <g fill="#ffffff" transform="translate(74,76) scale(1.02)">
+    <rect x="16" y="60" width="16" height="34" rx="8"/><circle cx="24" cy="46" r="8"/>
+    <rect x="46" y="46" width="16" height="48" rx="8"/><circle cx="54" cy="32" r="8"/>
+    <rect x="76" y="32" width="16" height="62" rx="8"/><circle cx="84" cy="18" r="8"/>
+  </g>
+</svg>

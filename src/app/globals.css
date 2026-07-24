@@ -1,0 +1,70 @@
+@import "tailwindcss";
+
+:root {
+  --background: #0d0e10;
+  --surface: #16181c;
+  --surface-raised: #1c1f24;
+  --border-hairline: #2a2d33;
+  --foreground: #f5f6f7;
+  --foreground-muted: #9a9ea6;
+
+  --brand: #4f6bff;
+  --brand-light: #7c93ff;
+  --brand-dim: #2a3568;
+
+  --status-good: #34d399;
+  --status-good-bg: #0f2a22;
+  --status-warn: #fbbf24;
+  --status-warn-bg: #322506;
+  --status-bad: #fb7185;
+  --status-bad-bg: #34131b;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-border-hairline: var(--border-hairline);
+  --color-foreground: var(--foreground);
+  --color-foreground-muted: var(--foreground-muted);
+
+  --color-brand: var(--brand);
+  --color-brand-light: var(--brand-light);
+  --color-brand-dim: var(--brand-dim);
+
+  --color-status-good: var(--status-good);
+  --color-status-good-bg: var(--status-good-bg);
+  --color-status-warn: var(--status-warn);
+  --color-status-warn-bg: var(--status-warn-bg);
+  --color-status-bad: var(--status-bad);
+  --color-status-bad-bg: var(--status-bad-bg);
+
+  --font-sans: var(--font-body);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-body);
+}
+
+::selection {
+  background: var(--brand);
+  color: white;
+}
+
+:focus-visible {
+  outline: 2px solid var(--brand-light);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,0 +1,26 @@
+# dependencies
+node_modules
+
+# Next.js build output
+.next
+out
+build
+
+# env files
+.env
+.env*.local
+
+# Prisma
+/src/generated/prisma
+prisma/dev.db
+prisma/dev.db-journal
+
+# local claude settings
+.claude/settings.local.json
+
+# misc
+.DS_Store
+*.pem
+.vercel
+*.tsbuildinfo
+next-env.d.ts
