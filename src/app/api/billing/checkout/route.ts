@@ -18,6 +18,16 @@ export async function POST(request: Request) {
     where: { organizationId: organization.id },
   });
 
+  // If the org still has trial days left and hasn't paid before, carry the
+  // remaining trial into Stripe so the card isn't charged until it ends.
+  const remainingTrialEnd =
+    subscription?.status === "trialing" &&
+    subscription.trialEndsAt &&
+    subscription.trialEndsAt.getTime() > Date.now() &&
+    !subscription.stripeSubscriptionId
+      ? Math.floor(subscription.trialEndsAt.getTime() / 1000)
+      : undefined;
+
   const checkoutSession = await stripe.checkout.sessions.create({
     mode: "subscription",
     customer: subscription?.stripeCustomerId ?? undefined,
@@ -33,6 +43,7 @@ export async function POST(request: Request) {
         quantity: 1,
       },
     ],
+    subscription_data: remainingTrialEnd ? { trial_end: remainingTrialEnd } : undefined,
     metadata: { organizationId: organization.id },
     success_url: `${origin}/dashboard/billing?checkout=success`,
     cancel_url: `${origin}/dashboard/billing?checkout=cancelled`,

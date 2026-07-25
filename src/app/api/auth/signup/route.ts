@@ -4,6 +4,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { slugify } from "@/lib/slugify";
 import { DEFAULT_LOCATIONS, LOCATION_LABELS } from "@/lib/locations";
+import { trialEndDate } from "@/lib/billing";
 
 const signupSchema = z.object({
   name: z.string().min(1),
@@ -56,7 +57,9 @@ export async function POST(request: Request) {
             name: LOCATION_LABELS[type],
           })),
         },
-        subscription: { create: { plan: "STANDARD" } },
+        subscription: {
+          create: { plan: "STANDARD", status: "trialing", trialEndsAt: trialEndDate() },
+        },
       },
     });
 

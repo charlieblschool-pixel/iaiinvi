@@ -1,12 +1,18 @@
 import { prisma } from "@/lib/prisma";
 import { requireOrg } from "@/lib/session";
 import { stripeEnabled, STANDARD_PLAN } from "@/lib/stripe";
+import { hasInventoryAccess, isTrialActive, trialDaysLeft } from "@/lib/billing";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { UpgradeButton, ManageBillingButton } from "@/components/dashboard/billing-actions";
 
-export default async function BillingPage() {
+export default async function BillingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ paywall?: string }>;
+}) {
   const { organization } = await requireOrg();
+  const { paywall } = await searchParams;
 
   const [subscription, recentCharges] = await Promise.all([
     prisma.subscription.findUnique({ where: { organizationId: organization.id } }),
@@ -17,7 +23,25 @@ export default async function BillingPage() {
     }),
   ]);
 
-  const isActive = subscription?.status === "active" || subscription?.status === "trialing";
+  const isActive = subscription?.status === "active";
+  const trialing = isTrialActive(subscription);
+  const trialExpired =
+    subscription?.status === "trialing" && !trialing && Boolean(subscription.trialEndsAt);
+  const daysLeft = trialDaysLeft(subscription);
+  const hasAccess = hasInventoryAccess(subscription);
+
+  let badgeTone: "good" | "warn" | "bad" | "neutral" = "neutral";
+  let badgeLabel = "No billing on file";
+  if (isActive) {
+    badgeTone = "good";
+    badgeLabel = "Active";
+  } else if (trialing) {
+    badgeTone = "warn";
+    badgeLabel = `Trial — ${daysLeft} day${daysLeft === 1 ? "" : "s"} left`;
+  } else if (trialExpired) {
+    badgeTone = "bad";
+    badgeLabel = "Trial expired";
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -27,6 +51,21 @@ export default async function BillingPage() {
           One flat plan, plus every auto-charged reorder in one place.
         </p>
       </div>
+
+      {paywall === "inventory" && !hasAccess && (
+        <div className="rounded-xl border border-status-bad/40 bg-status-bad-bg px-5 py-4 text-sm text-status-bad">
+          Your 14-day free trial has ended — subscribe below to keep using
+          Inventory.
+        </div>
+      )}
+
+      {trialing && (
+        <div className="rounded-xl border border-status-warn/40 bg-status-warn-bg px-5 py-4 text-sm text-status-warn">
+          You&rsquo;re on your 14-day free trial with {daysLeft} day
+          {daysLeft === 1 ? "" : "s"} left. Subscribe now and your card won&rsquo;t
+          be charged until the trial ends.
+        </div>
+      )}
 
       {!stripeEnabled && (
         <div className="rounded-xl border border-status-warn/40 bg-status-warn-bg px-5 py-4 text-sm text-status-warn">
@@ -51,13 +90,11 @@ export default async function BillingPage() {
               </span>
             </p>
           </div>
-          <Badge tone={isActive ? "good" : "neutral"}>
-            {isActive ? "Active" : "No billing on file"}
-          </Badge>
+          <Badge tone={badgeTone}>{badgeLabel}</Badge>
         </div>
         <p className="mt-3 text-sm text-foreground-muted">
           Every location, every product, unlimited reorder approvals and
-          auto-charges. No tiers to think about.
+          auto-charges. 14 days free, then $100/mo — cancel anytime.
         </p>
         {subscription?.cardBrand && subscription.cardLast4 && (
           <p className="mt-3 text-sm text-foreground-muted">
@@ -72,7 +109,11 @@ export default async function BillingPage() {
         )}
         <div className="mt-5 flex gap-3">
           <UpgradeButton>
-            {isActive ? "Update payment method" : "Subscribe — $100/mo"}
+            {isActive
+              ? "Update payment method"
+              : subscription?.stripeCustomerId
+                ? "Reactivate — $100/mo"
+                : "Subscribe — $100/mo"}
           </UpgradeButton>
           {subscription?.stripeCustomerId && <ManageBillingButton />}
         </div>

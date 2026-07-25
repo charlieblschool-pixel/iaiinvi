@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireOrg } from "@/lib/session";
+import { hasInventoryAccess } from "@/lib/billing";
 
 const patchSchema = z.object({
   autoReorder: z.boolean().optional(),
@@ -12,6 +13,17 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { organization } = await requireOrg();
+
+  const subscription = await prisma.subscription.findUnique({
+    where: { organizationId: organization.id },
+  });
+  if (!hasInventoryAccess(subscription)) {
+    return NextResponse.json(
+      { error: "Your free trial has ended — subscribe to keep managing inventory." },
+      { status: 402 },
+    );
+  }
+
   const { id } = await params;
   const body = await request.json();
   const parsed = patchSchema.safeParse(body);

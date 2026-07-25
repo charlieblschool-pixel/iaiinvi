@@ -6,14 +6,15 @@ import {
   OrganizationNameForm,
   NewVendorForm,
   NewCategoryForm,
+  StaffCard,
   DeleteWorkspaceButton,
 } from "@/components/dashboard/settings-forms";
 import { ConnectionsCard } from "@/components/dashboard/connections-card";
 
 export default async function SettingsPage() {
-  const { organization, membership } = await requireOrg();
+  const { session, organization, membership } = await requireOrg();
 
-  const [locations, vendors, categories] = await Promise.all([
+  const [locations, vendors, categories, memberships] = await Promise.all([
     prisma.location.findMany({
       where: { organizationId: organization.id },
       orderBy: { name: "asc" },
@@ -27,7 +28,20 @@ export default async function SettingsPage() {
       orderBy: { name: "asc" },
       include: { _count: { select: { products: true } } },
     }),
+    prisma.membership.findMany({
+      where: { organizationId: organization.id },
+      include: { user: true },
+      orderBy: { createdAt: "asc" },
+    }),
   ]);
+
+  const staff = memberships.map((m) => ({
+    membershipId: m.id,
+    userId: m.userId,
+    name: m.user.name,
+    email: m.user.email,
+    role: m.role,
+  }));
 
   return (
     <div className="flex flex-col gap-6">
@@ -106,6 +120,12 @@ export default async function SettingsPage() {
           <NewVendorForm />
         </div>
       </Card>
+
+      <StaffCard
+        members={staff}
+        currentUserId={session.user.id}
+        isOwner={membership.role === "OWNER"}
+      />
 
       <ConnectionsCard />
 

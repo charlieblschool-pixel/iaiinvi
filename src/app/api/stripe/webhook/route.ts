@@ -32,11 +32,14 @@ export async function POST(request: Request) {
         });
         const pm = sub.default_payment_method as Stripe.PaymentMethod | null;
 
+        const trialEndsAt = sub.trial_end ? new Date(sub.trial_end * 1000) : null;
+
         await prisma.subscription.upsert({
           where: { organizationId },
           update: {
             plan: "STANDARD",
             status: sub.status,
+            trialEndsAt,
             stripeCustomerId: String(session.customer),
             stripeSubscriptionId: sub.id,
             stripePaymentMethodId: pm?.id ?? null,
@@ -47,6 +50,7 @@ export async function POST(request: Request) {
             organizationId,
             plan: "STANDARD",
             status: sub.status,
+            trialEndsAt,
             stripeCustomerId: String(session.customer),
             stripeSubscriptionId: sub.id,
             stripePaymentMethodId: pm?.id ?? null,
@@ -71,6 +75,7 @@ export async function POST(request: Request) {
         where: { stripeSubscriptionId: sub.id },
         data: {
           status: sub.status,
+          trialEndsAt: sub.trial_end ? new Date(sub.trial_end * 1000) : null,
           currentPeriodEnd: periodEnd ? new Date(periodEnd * 1000) : null,
         },
       });

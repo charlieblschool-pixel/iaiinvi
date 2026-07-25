@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireOrg } from "@/lib/session";
+import { hasInventoryAccess } from "@/lib/billing";
 
 const createProductSchema = z.object({
   name: z.string().min(1),
@@ -19,6 +20,17 @@ const createProductSchema = z.object({
 
 export async function POST(request: Request) {
   const { organization } = await requireOrg();
+
+  const subscription = await prisma.subscription.findUnique({
+    where: { organizationId: organization.id },
+  });
+  if (!hasInventoryAccess(subscription)) {
+    return NextResponse.json(
+      { error: "Your free trial has ended — subscribe to keep adding inventory." },
+      { status: 402 },
+    );
+  }
+
   const body = await request.json();
   const parsed = createProductSchema.safeParse(body);
   if (!parsed.success) {

@@ -1,6 +1,9 @@
+import { requireInventoryAccess } from "@/lib/session";
 import { ImportForm } from "@/components/dashboard/import-form";
 
-export default function ImportInventoryPage() {
+export default async function ImportInventoryPage() {
+  await requireInventoryAccess();
+
   return (
     <div className="mx-auto max-w-2xl">
       <h1 className="text-2xl font-semibold">Import spreadsheet</h1>

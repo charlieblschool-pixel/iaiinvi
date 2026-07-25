@@ -1,14 +1,14 @@
 import { Fragment } from "react";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { requireOrg } from "@/lib/session";
+import { requireInventoryAccess } from "@/lib/session";
 import { stockStatus } from "@/lib/inventory";
 import { Badge } from "@/components/ui/badge";
 import { LinkButton } from "@/components/ui/button";
 import { AutoReorderToggle } from "@/components/dashboard/auto-reorder-toggle";
 
 export default async function InventoryPage() {
-  const { organization } = await requireOrg();
+  const { organization } = await requireInventoryAccess();
 
   const locations = await prisma.location.findMany({
     where: { organizationId: organization.id },

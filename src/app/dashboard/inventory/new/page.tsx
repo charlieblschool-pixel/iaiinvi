@@ -1,9 +1,9 @@
 import { prisma } from "@/lib/prisma";
-import { requireOrg } from "@/lib/session";
+import { requireInventoryAccess } from "@/lib/session";
 import { NewProductForm } from "@/components/dashboard/new-product-form";
 
 export default async function NewProductPage() {
-  const { organization } = await requireOrg();
+  const { organization } = await requireInventoryAccess();
 
   const [locations, vendors, categories] = await Promise.all([
     prisma.location.findMany({

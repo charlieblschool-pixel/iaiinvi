@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireOrg } from "@/lib/session";
+import { hasInventoryAccess } from "@/lib/billing";
 import { LOCATION_LABELS } from "@/lib/locations";
 
 const rowSchema = z.object({
@@ -24,6 +25,17 @@ const DEFAULT_LEAD_TIME_DAYS = 7;
 
 export async function POST(request: Request) {
   const { organization } = await requireOrg();
+
+  const subscription = await prisma.subscription.findUnique({
+    where: { organizationId: organization.id },
+  });
+  if (!hasInventoryAccess(subscription)) {
+    return NextResponse.json(
+      { error: "Your free trial has ended — subscribe to keep importing inventory." },
+      { status: 402 },
+    );
+  }
+
   const body = await request.json();
   const parsed = bodySchema.safeParse(body);
   if (!parsed.success) {
