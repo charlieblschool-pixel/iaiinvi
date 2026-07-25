@@ -131,6 +131,16 @@ model Vendor {
   leadTimeDays   Int
   organizationId String
 
+  // Vendor B2B portal connection — lets the reorder engine auto-fill a
+  // vendor's cart when a suggestion is approved. Password is encrypted at
+  // rest (see src/lib/vendor-credentials.ts); never stored or returned in
+  // plaintext.
+  portalUrl               String?
+  portalUsername          String?
+  portalPasswordEncrypted String?
+  accountNumber           String?
+  connectedAt             DateTime?
+
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   products     Product[]
 

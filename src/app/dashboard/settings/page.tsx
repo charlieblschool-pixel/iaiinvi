@@ -10,6 +10,7 @@ import {
   DeleteWorkspaceButton,
 } from "@/components/dashboard/settings-forms";
 import { ConnectionsCard } from "@/components/dashboard/connections-card";
+import { LocationEditChip } from "@/components/dashboard/location-edit-row";
 
 export default async function SettingsPage() {
   const { session, organization, membership } = await requireOrg();
@@ -57,16 +58,18 @@ export default async function SettingsPage() {
       <Card className="p-6">
         <h2 className="font-semibold">Locations</h2>
         <p className="mt-1 text-sm text-foreground-muted">
-          Every workspace tracks stock across these 9 location types.
+          Every workspace tracks stock across these 9 location types. Click
+          one to rename it — spreadsheet imports still match it by its type
+          if the new name doesn&rsquo;t line up with a column value.
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
           {locations.map((l) => (
-            <span
+            <LocationEditChip
               key={l.id}
-              className="rounded-full border border-border-hairline bg-surface-raised px-3 py-1.5 text-sm text-foreground-muted"
-            >
-              {l.name !== LOCATION_LABELS[l.type] ? l.name : LOCATION_LABELS[l.type]}
-            </span>
+              id={l.id}
+              name={l.name}
+              typeLabel={LOCATION_LABELS[l.type]}
+            />
           ))}
         </div>
       </Card>
@@ -127,7 +130,16 @@ export default async function SettingsPage() {
         isOwner={membership.role === "OWNER"}
       />
 
-      <ConnectionsCard />
+      <ConnectionsCard
+        vendors={vendors.map((v) => ({
+          id: v.id,
+          name: v.name,
+          connected: Boolean(v.connectedAt),
+          portalUrl: v.portalUrl,
+          portalUsername: v.portalUsername,
+          accountNumber: v.accountNumber,
+        }))}
+      />
 
       {membership.role === "OWNER" && (
         <Card className="border-status-bad/40 p-6">

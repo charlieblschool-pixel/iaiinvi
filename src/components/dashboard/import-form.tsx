@@ -51,7 +51,7 @@ export function ImportForm() {
   const [mapping, setMapping] = useState<Record<FieldKey, string>>({} as Record<FieldKey, string>);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<{ created: number } | null>(null);
+  const [result, setResult] = useState<{ created: number; updated: number } | null>(null);
 
   function handleFile(file: File) {
     setError(null);
@@ -104,7 +104,7 @@ export function ImportForm() {
       setError(data.error ?? "Import failed. Please check your file and try again.");
       return;
     }
-    setResult({ created: data.created });
+    setResult({ created: data.created, updated: data.updated ?? 0 });
     router.refresh();
   }
 
@@ -112,11 +112,15 @@ export function ImportForm() {
     return (
       <Card className="p-6 text-center">
         <h2 className="font-semibold">
-          Imported {result.created} product{result.created === 1 ? "" : "s"}
+          {result.created} new product{result.created === 1 ? "" : "s"}
+          {result.updated > 0
+            ? `, ${result.updated} updated`
+            : ""}
         </h2>
         <p className="mt-2 text-sm text-foreground-muted">
           Review reorder points and vendors in Inventory — anything without a
-          clear location was placed in Storeroom.
+          clear location was placed in Storeroom. Products matching an
+          existing name were updated instead of duplicated.
         </p>
         <LinkButton href="/dashboard/inventory" className="mt-6">
           Go to inventory

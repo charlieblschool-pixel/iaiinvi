@@ -37,6 +37,9 @@ export default async function InventoryPage() {
           </p>
         </div>
         <div className="flex gap-3">
+          <LinkButton href="/dashboard/inventory/import-sales" variant="secondary">
+            Sync Booker sales
+          </LinkButton>
           <LinkButton href="/dashboard/inventory/import" variant="secondary">
             Import spreadsheet
           </LinkButton>

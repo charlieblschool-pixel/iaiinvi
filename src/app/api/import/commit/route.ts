@@ -65,43 +65,37 @@ export async function POST(request: Request) {
   }
 
   const categoryCache = new Map<string, string>();
-  const vendorCache = new Map<string, string>();
+  const vendorCache = new Map<string, { id: string; name: string }>();
   let unmatchedLocations = 0;
   let created = 0;
+  let updated = 0;
+
+  async function resolveCategory(name: string): Promise<string> {
+    const key = name.trim().toLowerCase();
+    const cached = categoryCache.get(key);
+    if (cached) return cached;
+    const category = await prisma.category.upsert({
+      where: { organizationId_name: { organizationId: organization.id, name: name.trim() } },
+      update: {},
+      create: { name: name.trim(), organizationId: organization.id },
+    });
+    categoryCache.set(key, category.id);
+    return category.id;
+  }
 
   for (const row of parsed.data.rows) {
-    let categoryId: string | null = null;
-    if (row.category?.trim()) {
-      const key = row.category.trim().toLowerCase();
-      if (categoryCache.has(key)) {
-        categoryId = categoryCache.get(key)!;
-      } else {
-        const category = await prisma.category.upsert({
-          where: {
-            organizationId_name: {
-              organizationId: organization.id,
-              name: row.category.trim(),
-            },
-          },
-          update: {},
-          create: { name: row.category.trim(), organizationId: organization.id },
-        });
-        categoryCache.set(key, category.id);
-        categoryId = category.id;
-      }
-    }
-
-    let vendorId: string | null = null;
+    let vendor: { id: string; name: string } | null = null;
     if (row.vendorName?.trim()) {
       const key = row.vendorName.trim().toLowerCase();
-      if (vendorCache.has(key)) {
-        vendorId = vendorCache.get(key)!;
+      const cached = vendorCache.get(key);
+      if (cached) {
+        vendor = cached;
       } else {
-        let vendor = await prisma.vendor.findFirst({
+        let vendorRecord = await prisma.vendor.findFirst({
           where: { organizationId: organization.id, name: row.vendorName.trim() },
         });
-        if (!vendor) {
-          vendor = await prisma.vendor.create({
+        if (!vendorRecord) {
+          vendorRecord = await prisma.vendor.create({
             data: {
               name: row.vendorName.trim(),
               leadTimeDays: DEFAULT_LEAD_TIME_DAYS,
@@ -109,10 +103,19 @@ export async function POST(request: Request) {
             },
           });
         }
-        vendorCache.set(key, vendor.id);
-        vendorId = vendor.id;
+        vendor = { id: vendorRecord.id, name: vendorRecord.name };
+        vendorCache.set(key, vendor);
       }
     }
+    const vendorId = vendor?.id ?? null;
+
+    // No explicit category on the row? Group the product under its brand
+    // (vendor name) automatically instead of leaving it uncategorized.
+    const categoryId = row.category?.trim()
+      ? await resolveCategory(row.category)
+      : vendor
+        ? await resolveCategory(vendor.name)
+        : null;
 
     const location = matchLocation(row.locationName);
     if (!location) continue;
@@ -120,34 +123,65 @@ export async function POST(request: Request) {
       unmatchedLocations += 1;
     }
 
-    await prisma.product.create({
-      data: {
-        name: row.name.trim(),
-        unitLabel: row.unit?.trim() || "unit",
-        casePackSize: row.casePackSize && row.casePackSize > 0 ? Math.round(row.casePackSize) : 1,
-        unitCost: row.unitCost ?? 0,
-        categoryId,
-        vendorId,
+    const existing = await prisma.product.findFirst({
+      where: {
         organizationId: organization.id,
-        stockLevels: {
-          create: {
-            locationId: location.id,
-            onHand: row.onHand ? Math.round(row.onHand) : 0,
-            reorderPoint: row.reorderPoint ? Math.round(row.reorderPoint) : 0,
-          },
-        },
+        name: { equals: row.name.trim(), mode: "insensitive" },
       },
     });
-    created += 1;
+
+    let productId: string;
+    if (existing) {
+      const product = await prisma.product.update({
+        where: { id: existing.id },
+        data: {
+          unitLabel: row.unit?.trim() || undefined,
+          casePackSize: row.casePackSize && row.casePackSize > 0 ? Math.round(row.casePackSize) : undefined,
+          unitCost: row.unitCost,
+          categoryId: categoryId ?? undefined,
+          vendorId: vendorId ?? undefined,
+        },
+      });
+      productId = product.id;
+      updated += 1;
+    } else {
+      const product = await prisma.product.create({
+        data: {
+          name: row.name.trim(),
+          unitLabel: row.unit?.trim() || "unit",
+          casePackSize: row.casePackSize && row.casePackSize > 0 ? Math.round(row.casePackSize) : 1,
+          unitCost: row.unitCost ?? 0,
+          categoryId,
+          vendorId,
+          organizationId: organization.id,
+        },
+      });
+      productId = product.id;
+      created += 1;
+    }
+
+    await prisma.stockLevel.upsert({
+      where: { productId_locationId: { productId, locationId: location.id } },
+      update: {
+        onHand: row.onHand !== undefined ? Math.round(row.onHand) : undefined,
+        reorderPoint: row.reorderPoint !== undefined ? Math.round(row.reorderPoint) : undefined,
+      },
+      create: {
+        productId,
+        locationId: location.id,
+        onHand: row.onHand ? Math.round(row.onHand) : 0,
+        reorderPoint: row.reorderPoint ? Math.round(row.reorderPoint) : 0,
+      },
+    });
   }
 
   await prisma.activityLogEntry.create({
     data: {
       organizationId: organization.id,
       type: "STOCK_ADJUSTED",
-      message: `Imported ${created} product${created === 1 ? "" : "s"} from a spreadsheet`,
+      message: `Imported spreadsheet — ${created} new product${created === 1 ? "" : "s"}, ${updated} updated`,
     },
   });
 
-  return NextResponse.json({ ok: true, created, unmatchedLocations });
+  return NextResponse.json({ ok: true, created, updated, unmatchedLocations });
 }

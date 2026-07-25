@@ -33,13 +33,19 @@ export function ReorderSuggestionCard({
 }) {
   const router = useRouter();
   const [pending, setPending] = useState<"approve" | "skip" | null>(null);
+  const [vendorOrder, setVendorOrder] = useState<{ status: string; message: string; reviewUrl?: string } | null>(null);
   const [, startTransition] = useTransition();
 
   async function handleAction(action: "approve" | "skip") {
     setPending(action);
     const res = await fetch(`/api/reorder/${id}/${action}`, { method: "POST" });
+    const data = await res.json().catch(() => ({}));
     setPending(null);
     if (res.ok) {
+      if (action === "approve" && data.vendorOrder) {
+        setVendorOrder(data.vendorOrder);
+        return;
+      }
       startTransition(() => router.refresh());
     }
   }
@@ -61,6 +67,27 @@ export function ReorderSuggestionCard({
         {onHand === 1 ? "" : "s"} left · avg {avgWeeklyUsage}/wk · vendor lead
         time {leadTimeDays} days
       </p>
+
+      {vendorOrder && (
+        <div className="mt-3 rounded-lg bg-status-good-bg px-3 py-2 text-sm text-status-good">
+          {vendorOrder.message}
+          {vendorOrder.status === "ready_for_review" && vendorOrder.reviewUrl && (
+            <>
+              {" "}
+              <a href={vendorOrder.reviewUrl} target="_blank" rel="noreferrer" className="underline">
+                Review &amp; place order
+              </a>
+            </>
+          )}
+          <button
+            type="button"
+            className="ml-2 underline"
+            onClick={() => startTransition(() => router.refresh())}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {chargeError && (
         <p className="mt-3 rounded-lg bg-status-warn-bg px-3 py-2 text-sm text-status-warn">

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireOrg } from "@/lib/session";
+import { placeVendorOrder } from "@/lib/vendor-ordering";
 
 export async function POST(
   _request: Request,
@@ -11,7 +12,7 @@ export async function POST(
 
   const suggestion = await prisma.reorderSuggestion.findFirst({
     where: { id, organizationId: organization.id, status: "PENDING" },
-    include: { product: true },
+    include: { product: { include: { vendor: true } } },
   });
   if (!suggestion) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -31,5 +32,26 @@ export async function POST(
     }),
   ]);
 
-  return NextResponse.json({ ok: true });
+  let vendorOrder: { status: string; message: string; reviewUrl?: string } | null = null;
+  if (suggestion.product.vendor) {
+    const result = await placeVendorOrder(suggestion.product.vendor, [
+      {
+        productName: suggestion.product.name,
+        quantity: suggestion.quantity,
+        unitLabel: suggestion.product.unitLabel,
+      },
+    ]);
+    vendorOrder = result;
+    if (result.status === "ready_for_review") {
+      await prisma.activityLogEntry.create({
+        data: {
+          organizationId: organization.id,
+          type: "SETTINGS_CHANGED",
+          message: result.message,
+        },
+      });
+    }
+  }
+
+  return NextResponse.json({ ok: true, vendorOrder });
 }
