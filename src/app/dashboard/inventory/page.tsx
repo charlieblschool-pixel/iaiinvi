@@ -1,30 +1,62 @@
-import { Fragment } from "react";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireInventoryAccess } from "@/lib/session";
-import { stockStatus } from "@/lib/inventory";
-import { Badge } from "@/components/ui/badge";
 import { LinkButton } from "@/components/ui/button";
-import { AutoReorderToggle } from "@/components/dashboard/auto-reorder-toggle";
+import {
+  InventoryBoard,
+  type BoardLocation,
+  type BoardProduct,
+} from "@/components/dashboard/inventory-board";
 
 export default async function InventoryPage() {
   const { organization } = await requireInventoryAccess();
 
   const locations = await prisma.location.findMany({
     where: { organizationId: organization.id },
-    include: {
-      stockLevels: {
-        include: { product: { include: { category: true } } },
-        orderBy: { product: { name: "asc" } },
-      },
-    },
+    orderBy: { name: "asc" },
   });
 
-  const productCount = await prisma.product.count({
+  const products = await prisma.product.findMany({
     where: { organizationId: organization.id },
+    include: {
+      category: true,
+      stockLevels: true,
+    },
+    orderBy: { name: "asc" },
   });
 
-  const locationsWithStock = locations.filter((l) => l.stockLevels.length > 0);
+  const productsWithStock = products.filter((p) => p.stockLevels.length > 0);
+  const locationsWithStock = locations.filter((l) =>
+    productsWithStock.some((p) => p.stockLevels.some((s) => s.locationId === l.id)),
+  );
+
+  const boardLocations: BoardLocation[] = locationsWithStock.map((l) => ({
+    id: l.id,
+    name: l.name,
+  }));
+
+  const brandMap = new Map<string, BoardProduct[]>();
+  for (const product of productsWithStock) {
+    const brand = product.category?.name ?? "Uncategorized";
+    const boardProduct: BoardProduct = {
+      id: product.id,
+      name: product.name,
+      unitLabel: product.unitLabel,
+      autoReorder: product.autoReorder,
+      brand,
+      stock: product.stockLevels.map((s) => ({
+        locationId: s.locationId,
+        onHand: s.onHand,
+        reorderPoint: s.reorderPoint,
+      })),
+    };
+    if (!brandMap.has(brand)) brandMap.set(brand, []);
+    brandMap.get(brand)!.push(boardProduct);
+  }
+
+  const brands = Array.from(brandMap.entries())
+    .map(([name, products]) => ({ name, products }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   return (
     <div className="flex flex-col gap-6">
@@ -32,7 +64,7 @@ export default async function InventoryPage() {
         <div>
           <h1 className="text-2xl font-semibold">Inventory</h1>
           <p className="mt-1 text-foreground-muted">
-            {productCount} product{productCount === 1 ? "" : "s"} ·{" "}
+            {products.length} product{products.length === 1 ? "" : "s"} ·{" "}
             {locations.length} locations
           </p>
         </div>
@@ -47,7 +79,7 @@ export default async function InventoryPage() {
         </div>
       </div>
 
-      {locationsWithStock.length === 0 ? (
+      {brands.length === 0 ? (
         <div className="rounded-2xl border border-border-hairline bg-surface px-6 py-16 text-center">
           <p className="text-foreground-muted">
             No products yet. Add your first one, or import your existing
@@ -61,62 +93,7 @@ export default async function InventoryPage() {
           </div>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-2xl border border-border-hairline bg-surface">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs uppercase tracking-wider text-foreground-muted">
-                <th className="px-6 py-3 font-medium">Product</th>
-                <th className="px-6 py-3 font-medium">Category</th>
-                <th className="px-6 py-3 font-medium">On hand</th>
-                <th className="px-6 py-3 font-medium">Reorder pt</th>
-                <th className="px-6 py-3 font-medium">Status</th>
-                <th className="px-6 py-3 font-medium">Auto-reorder</th>
-              </tr>
-            </thead>
-            <tbody>
-              {locationsWithStock.map((location) => (
-                <Fragment key={location.id}>
-                  <tr className="border-t border-border-hairline bg-surface-raised/40">
-                    <td
-                      colSpan={6}
-                      className="px-6 py-2 text-xs font-medium uppercase tracking-wider text-brand-light"
-                    >
-                      {location.name}
-                    </td>
-                  </tr>
-                  {location.stockLevels.map((s) => {
-                    const status = stockStatus(s.onHand, s.reorderPoint);
-                    return (
-                      <tr key={s.id} className="border-t border-border-hairline">
-                        <td className="px-6 py-3">{s.product.name}</td>
-                        <td className="px-6 py-3 text-foreground-muted">
-                          {s.product.category?.name ?? "—"}
-                        </td>
-                        <td className="px-6 py-3 text-foreground-muted">
-                          {s.onHand} {s.product.unitLabel}
-                          {s.onHand === 1 ? "" : "s"}
-                        </td>
-                        <td className="px-6 py-3 text-foreground-muted">
-                          {s.reorderPoint}
-                        </td>
-                        <td className="px-6 py-3">
-                          <Badge tone={status.tone}>{status.label}</Badge>
-                        </td>
-                        <td className="px-6 py-3">
-                          <AutoReorderToggle
-                            productId={s.product.id}
-                            productName={s.product.name}
-                            initialValue={s.product.autoReorder}
-                          />
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </Fragment>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <InventoryBoard locations={boardLocations} brands={brands} />
       )}
 
       <p className="text-sm text-foreground-muted">
