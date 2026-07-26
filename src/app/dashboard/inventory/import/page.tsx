@@ -1,8 +1,15 @@
+import { prisma } from "@/lib/prisma";
 import { requireInventoryAccess } from "@/lib/session";
 import { ImportForm } from "@/components/dashboard/import-form";
+import { LOCATION_LABELS } from "@/lib/locations";
 
 export default async function ImportInventoryPage() {
-  await requireInventoryAccess();
+  const { organization } = await requireInventoryAccess();
+
+  const locations = await prisma.location.findMany({
+    where: { organizationId: organization.id },
+    orderBy: { name: "asc" },
+  });
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -12,7 +19,13 @@ export default async function ImportInventoryPage() {
         will sort products into categories and locations automatically.
       </p>
       <div className="mt-8">
-        <ImportForm />
+        <ImportForm
+          locations={locations.map((l) => ({
+            id: l.id,
+            name: l.name !== LOCATION_LABELS[l.type] ? l.name : LOCATION_LABELS[l.type],
+            type: l.type,
+          }))}
+        />
       </div>
     </div>
   );

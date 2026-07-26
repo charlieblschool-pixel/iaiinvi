@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { AutoReorderToggle } from "@/components/dashboard/auto-reorder-toggle";
 import { stockStatus } from "@/lib/inventory";
@@ -131,6 +132,7 @@ export function InventoryBoard({
                   <th className="px-4 py-3 text-right font-medium">Total</th>
                   <th className="px-6 py-3 font-medium">Status</th>
                   <th className="px-6 py-3 font-medium">Auto-reorder</th>
+                  <th className="px-6 py-3 font-medium" />
                 </tr>
               </thead>
               <tbody>
@@ -166,7 +168,7 @@ function BrandGroup({
   isCollapsed: boolean;
   onToggle: () => void;
 }) {
-  const colSpan = 4 + visibleLocations.length;
+  const colSpan = 5 + visibleLocations.length;
 
   return (
     <>
@@ -228,6 +230,14 @@ function BrandGroup({
                   productName={product.name}
                   initialValue={product.autoReorder}
                 />
+              </td>
+              <td className="px-6 py-3 text-right">
+                <Link
+                  href={`/dashboard/inventory/${product.id}/edit`}
+                  className="text-sm text-brand-light hover:underline"
+                >
+                  Edit
+                </Link>
               </td>
             </tr>
           );

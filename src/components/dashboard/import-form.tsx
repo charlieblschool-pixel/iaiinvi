@@ -6,31 +6,26 @@ import Papa from "papaparse";
 import { Card } from "@/components/ui/card";
 import { Select } from "@/components/ui/input";
 import { Button, LinkButton } from "@/components/ui/button";
+import type { LocationType } from "@/generated/prisma/enums";
 
 const TARGET_FIELDS = [
   { key: "name", label: "Product name", required: true },
-  { key: "category", label: "Category", required: false },
+  { key: "category", label: "Category / brand", required: false },
   { key: "unit", label: "Unit (bottle, jar…)", required: false },
   { key: "casePackSize", label: "Case pack size", required: false },
   { key: "unitCost", label: "Unit cost", required: false },
   { key: "vendorName", label: "Vendor", required: false },
-  { key: "locationName", label: "Location", required: false },
-  { key: "onHand", label: "On hand", required: false },
-  { key: "reorderPoint", label: "Reorder point", required: false },
 ] as const;
 
 type FieldKey = (typeof TARGET_FIELDS)[number]["key"];
 
 const GUESS_KEYWORDS: Record<FieldKey, string[]> = {
   name: ["product", "name", "item", "sku"],
-  category: ["category", "type", "group"],
+  category: ["category", "type", "group", "brand"],
   unit: ["unit", "uom"],
   casePackSize: ["case", "pack"],
   unitCost: ["cost", "price"],
-  vendorName: ["vendor", "supplier", "brand"],
-  locationName: ["location", "where", "storage"],
-  onHand: ["on hand", "onhand", "qty", "quantity", "stock", "count"],
-  reorderPoint: ["reorder", "min", "threshold", "par"],
+  vendorName: ["vendor", "supplier"],
 };
 
 function guessMapping(headers: string[]): Record<FieldKey, string> {
@@ -44,11 +39,38 @@ function guessMapping(headers: string[]): Record<FieldKey, string> {
   return mapping;
 }
 
-export function ImportForm() {
+type LocationOption = { id: string; name: string; type: LocationType };
+
+type LocationMapping = {
+  locationId: string;
+  onHandColumn: string;
+  reorderPointColumn: string;
+};
+
+function guessLocationMappings(
+  headers: string[],
+  locations: LocationOption[],
+): LocationMapping[] {
+  const mappings: LocationMapping[] = [];
+  for (const location of locations) {
+    const nameLower = location.name.toLowerCase();
+    const match = headers.find((h) => {
+      const hLower = h.toLowerCase();
+      return hLower.includes(nameLower) || nameLower.includes(hLower);
+    });
+    if (match) {
+      mappings.push({ locationId: location.id, onHandColumn: match, reorderPointColumn: "" });
+    }
+  }
+  return mappings;
+}
+
+export function ImportForm({ locations }: { locations: LocationOption[] }) {
   const router = useRouter();
   const [headers, setHeaders] = useState<string[]>([]);
   const [rows, setRows] = useState<Record<string, string>[]>([]);
   const [mapping, setMapping] = useState<Record<FieldKey, string>>({} as Record<FieldKey, string>);
+  const [locationMappings, setLocationMappings] = useState<LocationMapping[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ created: number; updated: number } | null>(null);
@@ -68,9 +90,27 @@ export function ImportForm() {
         setHeaders(detectedHeaders);
         setRows(results.data);
         setMapping(guessMapping(detectedHeaders));
+        setLocationMappings(guessLocationMappings(detectedHeaders, locations));
       },
       error: () => setError("Couldn't read that file. Please upload a CSV."),
     });
+  }
+
+  function addLocationMapping() {
+    setLocationMappings((prev) => [
+      ...prev,
+      { locationId: locations[0]?.id ?? "", onHandColumn: "", reorderPointColumn: "" },
+    ]);
+  }
+
+  function updateLocationMapping(index: number, patch: Partial<LocationMapping>) {
+    setLocationMappings((prev) =>
+      prev.map((m, i) => (i === index ? { ...m, ...patch } : m)),
+    );
+  }
+
+  function removeLocationMapping(index: number) {
+    setLocationMappings((prev) => prev.filter((_, i) => i !== index));
   }
 
   async function handleImport() {
@@ -78,19 +118,36 @@ export function ImportForm() {
       setError("Map a column to Product name before importing.");
       return;
     }
+    const activeLocationMappings = locationMappings.filter(
+      (m) => m.locationId && m.onHandColumn,
+    );
     setLoading(true);
     setError(null);
 
-    const payload = rows.map((row) => {
-      const mapped: Record<string, string> = {};
-      for (const field of TARGET_FIELDS) {
-        const source = mapping[field.key];
-        if (source && row[source] !== undefined) {
-          mapped[field.key] = row[source];
+    const payload = rows
+      .map((row) => {
+        const mapped: Record<string, unknown> = {};
+        for (const field of TARGET_FIELDS) {
+          const source = mapping[field.key];
+          if (source && row[source] !== undefined) {
+            mapped[field.key] = row[source];
+          }
         }
-      }
-      return mapped;
-    }).filter((r) => r.name?.trim());
+        mapped.stocks = activeLocationMappings
+          .map((m) => {
+            const rawOnHand = row[m.onHandColumn];
+            if (rawOnHand === undefined || rawOnHand.trim() === "") return null;
+            const rawReorder = m.reorderPointColumn ? row[m.reorderPointColumn] : undefined;
+            return {
+              locationId: m.locationId,
+              onHand: rawOnHand,
+              reorderPoint: rawReorder && rawReorder.trim() !== "" ? rawReorder : undefined,
+            };
+          })
+          .filter((s): s is { locationId: string; onHand: string; reorderPoint: string | undefined } => s !== null);
+        return mapped;
+      })
+      .filter((r) => typeof r.name === "string" && r.name.trim());
 
     const res = await fetch("/api/import/commit", {
       method: "POST",
@@ -119,7 +176,7 @@ export function ImportForm() {
         </h2>
         <p className="mt-2 text-sm text-foreground-muted">
           Review reorder points and vendors in Inventory — anything without a
-          clear location was placed in Storeroom. Products matching an
+          mapped location was placed in Storeroom. Products matching an
           existing name were updated instead of duplicated.
         </p>
         <LinkButton href="/dashboard/inventory" className="mt-6">
@@ -180,6 +237,94 @@ export function ImportForm() {
             </Select>
           </div>
         ))}
+      </div>
+
+      <div className="mt-6 flex flex-col gap-2">
+        <label className="text-xs font-medium uppercase tracking-wider text-foreground-muted">
+          Locations &amp; quantities
+        </label>
+        <p className="text-xs text-foreground-muted">
+          If your spreadsheet has a separate quantity column per location
+          (e.g. Retail Shelf, Backbar, In Use), map each one here — every
+          product will get stock in all the locations you set.
+        </p>
+
+        <div className="mt-2 flex flex-col gap-3">
+          {locationMappings.map((m, i) => (
+            <div
+              key={i}
+              className="grid grid-cols-[1fr_1fr_1fr_auto] items-end gap-2 rounded-lg border border-border-hairline p-3"
+            >
+              <div className="flex flex-col gap-1">
+                <span className="text-[11px] uppercase tracking-wider text-foreground-muted">
+                  Location
+                </span>
+                <Select
+                  value={m.locationId}
+                  onChange={(e) => updateLocationMapping(i, { locationId: e.target.value })}
+                >
+                  {locations.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-[11px] uppercase tracking-wider text-foreground-muted">
+                  On hand column
+                </span>
+                <Select
+                  value={m.onHandColumn}
+                  onChange={(e) => updateLocationMapping(i, { onHandColumn: e.target.value })}
+                >
+                  <option value="">Don&rsquo;t import</option>
+                  {headers.map((h) => (
+                    <option key={h} value={h}>
+                      {h}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-[11px] uppercase tracking-wider text-foreground-muted">
+                  Reorder pt column
+                </span>
+                <Select
+                  value={m.reorderPointColumn}
+                  onChange={(e) =>
+                    updateLocationMapping(i, { reorderPointColumn: e.target.value })
+                  }
+                >
+                  <option value="">None</option>
+                  {headers.map((h) => (
+                    <option key={h} value={h}>
+                      {h}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => removeLocationMapping(i)}
+              >
+                Remove
+              </Button>
+            </div>
+          ))}
+        </div>
+
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          className="mt-1 w-fit"
+          onClick={addLocationMapping}
+        >
+          + Add location
+        </Button>
       </div>
 
       <div className="mt-6 overflow-x-auto rounded-lg border border-border-hairline">

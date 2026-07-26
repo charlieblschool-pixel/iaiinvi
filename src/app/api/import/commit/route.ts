@@ -3,7 +3,12 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireOrg } from "@/lib/session";
 import { hasInventoryAccess } from "@/lib/billing";
-import { LOCATION_LABELS } from "@/lib/locations";
+
+const stockSchema = z.object({
+  locationId: z.string().min(1),
+  onHand: z.coerce.number().optional(),
+  reorderPoint: z.coerce.number().optional(),
+});
 
 const rowSchema = z.object({
   name: z.string().min(1),
@@ -12,9 +17,7 @@ const rowSchema = z.object({
   casePackSize: z.coerce.number().optional(),
   unitCost: z.coerce.number().optional(),
   vendorName: z.string().optional(),
-  locationName: z.string().optional(),
-  onHand: z.coerce.number().optional(),
-  reorderPoint: z.coerce.number().optional(),
+  stocks: z.array(stockSchema).optional(),
 });
 
 const bodySchema = z.object({
@@ -48,25 +51,12 @@ export async function POST(request: Request) {
   const locations = await prisma.location.findMany({
     where: { organizationId: organization.id },
   });
+  const validLocationIds = new Set(locations.map((l) => l.id));
   const fallbackLocation =
     locations.find((l) => l.type === "STOREROOM") ?? locations[0];
 
-  function matchLocation(name?: string) {
-    if (!name) return fallbackLocation;
-    const q = name.trim().toLowerCase();
-    const found = locations.find(
-      (l) =>
-        l.name.toLowerCase().includes(q) ||
-        q.includes(l.name.toLowerCase()) ||
-        LOCATION_LABELS[l.type].toLowerCase().includes(q) ||
-        q.includes(LOCATION_LABELS[l.type].toLowerCase()),
-    );
-    return found ?? fallbackLocation;
-  }
-
   const categoryCache = new Map<string, string>();
   const vendorCache = new Map<string, { id: string; name: string }>();
-  let unmatchedLocations = 0;
   let created = 0;
   let updated = 0;
 
@@ -117,12 +107,6 @@ export async function POST(request: Request) {
         ? await resolveCategory(vendor.name)
         : null;
 
-    const location = matchLocation(row.locationName);
-    if (!location) continue;
-    if (row.locationName && !location.name.toLowerCase().includes(row.locationName.trim().toLowerCase())) {
-      unmatchedLocations += 1;
-    }
-
     const existing = await prisma.product.findFirst({
       where: {
         organizationId: organization.id,
@@ -160,19 +144,34 @@ export async function POST(request: Request) {
       created += 1;
     }
 
-    await prisma.stockLevel.upsert({
-      where: { productId_locationId: { productId, locationId: location.id } },
-      update: {
-        onHand: row.onHand !== undefined ? Math.round(row.onHand) : undefined,
-        reorderPoint: row.reorderPoint !== undefined ? Math.round(row.reorderPoint) : undefined,
-      },
-      create: {
-        productId,
-        locationId: location.id,
-        onHand: row.onHand ? Math.round(row.onHand) : 0,
-        reorderPoint: row.reorderPoint ? Math.round(row.reorderPoint) : 0,
-      },
-    });
+    const stocks = (row.stocks ?? []).filter((s) => validLocationIds.has(s.locationId));
+
+    if (stocks.length === 0) {
+      if (fallbackLocation) {
+        await prisma.stockLevel.upsert({
+          where: { productId_locationId: { productId, locationId: fallbackLocation.id } },
+          update: {},
+          create: { productId, locationId: fallbackLocation.id, onHand: 0, reorderPoint: 0 },
+        });
+      }
+      continue;
+    }
+
+    for (const stock of stocks) {
+      await prisma.stockLevel.upsert({
+        where: { productId_locationId: { productId, locationId: stock.locationId } },
+        update: {
+          onHand: stock.onHand !== undefined ? Math.round(stock.onHand) : undefined,
+          reorderPoint: stock.reorderPoint !== undefined ? Math.round(stock.reorderPoint) : undefined,
+        },
+        create: {
+          productId,
+          locationId: stock.locationId,
+          onHand: stock.onHand ? Math.round(stock.onHand) : 0,
+          reorderPoint: stock.reorderPoint ? Math.round(stock.reorderPoint) : 0,
+        },
+      });
+    }
   }
 
   await prisma.activityLogEntry.create({
@@ -183,5 +182,5 @@ export async function POST(request: Request) {
     },
   });
 
-  return NextResponse.json({ ok: true, created, updated, unmatchedLocations });
+  return NextResponse.json({ ok: true, created, updated });
 }
