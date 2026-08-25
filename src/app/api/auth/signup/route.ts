@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { slugify } from "@/lib/slugify";
 import { DEFAULT_LOCATIONS, LOCATION_LABELS } from "@/lib/locations";
 import { trialEndDate } from "@/lib/billing";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
+import { sendVerificationEmail } from "@/lib/email";
 
 const signupSchema = z.object({
   name: z.string().min(1),
@@ -13,7 +16,18 @@ const signupSchema = z.object({
   businessName: z.string().min(1),
 });
 
+const VERIFY_TOKEN_TTL_HOURS = 24;
+
 export async function POST(request: Request) {
+  const ip = getClientIp(request);
+  const allowed = await checkRateLimit(`signup:${ip}`, 8, 60);
+  if (!allowed) {
+    return NextResponse.json(
+      { error: "Too many signup attempts. Try again in a bit." },
+      { status: 429 },
+    );
+  }
+
   const body = await request.json();
   const parsed = signupSchema.safeParse(body);
   if (!parsed.success) {
@@ -72,6 +86,24 @@ export async function POST(request: Request) {
       },
     });
   });
+
+  // The account already exists at this point — don't let a hiccup sending
+  // the verification email turn into a signup failure.
+  try {
+    const token = crypto.randomBytes(32).toString("hex");
+    await prisma.verificationToken.create({
+      data: {
+        identifier: `verify:${email}`,
+        token,
+        expires: new Date(Date.now() + VERIFY_TOKEN_TTL_HOURS * 60 * 60 * 1000),
+      },
+    });
+    const origin = new URL(request.url).origin;
+    const verifyUrl = `${origin}/verify-email?email=${encodeURIComponent(email)}&token=${token}`;
+    await sendVerificationEmail(email, verifyUrl);
+  } catch (err) {
+    console.error("[signup] failed to send verification email", err);
+  }
 
   return NextResponse.json({ ok: true });
 }

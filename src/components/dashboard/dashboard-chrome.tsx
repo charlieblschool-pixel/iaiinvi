@@ -3,16 +3,19 @@
 import { useState } from "react";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { Topbar } from "@/components/dashboard/topbar";
+import { VerifyEmailBanner } from "@/components/dashboard/verify-email-banner";
 
 export function DashboardChrome({
   orgName,
   userName,
   userEmail,
+  emailVerified,
   children,
 }: {
   orgName: string;
   userName: string;
   userEmail: string;
+  emailVerified: boolean;
   children: React.ReactNode;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -25,6 +28,7 @@ export function DashboardChrome({
         onNavigate={() => setMobileOpen(false)}
       />
       <div className="flex flex-1 flex-col lg:min-w-0">
+        {!emailVerified && <VerifyEmailBanner />}
         <Topbar
           userName={userName}
           userEmail={userEmail}

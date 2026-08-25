@@ -19,9 +19,8 @@ export function ConnectionsCard({ vendors }: { vendors: VendorConnectionInfo[] }
     <Card className="p-6">
       <h2 className="font-semibold">Connections</h2>
       <p className="mt-1 text-sm text-foreground-muted">
-        Sync sales from your point of sale and let the reorder engine fill a
-        vendor&rsquo;s cart automatically — you always give the final okay
-        before anything is purchased.
+        Sync sales from your point of sale and keep vendor portal details on
+        hand for fast reordering — you always place the final order yourself.
       </p>
 
       <div className="mt-4 flex items-center justify-between rounded-lg border border-border-hairline px-4 py-3">
@@ -56,10 +55,10 @@ export function ConnectionsCard({ vendors }: { vendors: VendorConnectionInfo[] }
       <div className="mt-6 border-t border-border-hairline pt-5">
         <h3 className="text-sm font-semibold">Vendor accounts</h3>
         <p className="mt-1 text-xs text-foreground-muted">
-          Connect a vendor&rsquo;s ordering portal to auto-fill its cart when
-          you approve a reorder. UNITE and Color Wow support cart auto-fill
-          today — other vendors are stored for account-number lookup, but
-          still require placing the order yourself for now.
+          Connect a vendor&rsquo;s ordering portal to store login details for
+          quick reference. Automated cart fill-in isn&rsquo;t available for
+          any vendor yet — approving a reorder gives you the vendor&rsquo;s
+          portal link so you can place the order yourself.
         </p>
         {vendors.length === 0 ? (
           <p className="mt-3 text-sm text-foreground-muted">

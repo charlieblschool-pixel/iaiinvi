@@ -44,6 +44,16 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
+// Lightweight, DB-backed request counter used to rate-limit sensitive auth
+// endpoints (login, signup, password reset) across serverless instances.
+model AuthAttempt {
+  id        String   @id @default(cuid())
+  key       String
+  createdAt DateTime @default(now())
+
+  @@index([key, createdAt])
+}
+
 model Account {
   id                String  @id @default(cuid())
   userId            String

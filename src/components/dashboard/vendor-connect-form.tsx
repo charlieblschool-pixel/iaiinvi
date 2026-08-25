@@ -104,9 +104,9 @@ export function VendorConnectRow({ vendor }: { vendor: VendorConnectionInfo }) {
             />
           </div>
           <p className="sm:col-span-2 text-xs text-foreground-muted">
-            Stored encrypted, never shown again. Used only to fill this
-            vendor&rsquo;s cart when you approve a reorder — you place the
-            final order yourself.
+            Stored encrypted, never shown again. Automated cart fill-in isn&rsquo;t
+            available yet — for now this just keeps your login on hand for
+            quick reference when you place an order yourself.
           </p>
           {error && <p className="sm:col-span-2 text-sm text-status-bad">{error}</p>}
           <div className="sm:col-span-2">

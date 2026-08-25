@@ -126,7 +126,19 @@ export function SignupForm({ googleEnabled }: { googleEnabled: boolean }) {
         </Button>
       </form>
 
-      <p className="mt-6 text-center text-sm text-foreground-muted">
+      <p className="mt-4 text-center text-xs text-foreground-muted">
+        By creating a workspace, you agree to our{" "}
+        <Link href="/terms" className="text-brand-light hover:underline">
+          Terms
+        </Link>{" "}
+        and{" "}
+        <Link href="/privacy" className="text-brand-light hover:underline">
+          Privacy Policy
+        </Link>
+        .
+      </p>
+
+      <p className="mt-4 text-center text-sm text-foreground-muted">
         Already have an account?{" "}
         <Link href="/login" className="text-brand-light hover:underline">
           Log in
