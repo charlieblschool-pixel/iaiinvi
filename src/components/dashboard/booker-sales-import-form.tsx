@@ -227,7 +227,7 @@ export function BookerSalesImportForm() {
           {(summary?.filter((s) => s.matched).length ?? 0) === 1 ? "" : "s"}{" "}
           updated in inventory.
         </p>
-        <div className="mt-4 max-h-96 overflow-y-auto rounded-lg border border-border-hairline">
+        <div className="mt-4 max-h-96 overflow-auto rounded-lg border border-border-hairline">
           <table className="w-full text-xs">
             <thead>
               <tr className="bg-surface-raised text-left text-foreground-muted">
@@ -240,14 +240,14 @@ export function BookerSalesImportForm() {
             <tbody>
               {summary?.map((row, i) => (
                 <tr key={i} className="border-t border-border-hairline">
-                  <td className="px-3 py-2">{row.productName}</td>
-                  <td className="px-3 py-2 text-foreground-muted">
+                  <td className="whitespace-nowrap px-3 py-2">{row.productName}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-foreground-muted">
                     {row.category ?? "—"}
                   </td>
-                  <td className="px-3 py-2 text-foreground-muted">
+                  <td className="whitespace-nowrap px-3 py-2 text-foreground-muted">
                     {row.quantity}
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="whitespace-nowrap px-3 py-2">
                     <Badge tone={row.matched ? "good" : "bad"}>
                       {row.matched ? "Updated" : "Not in inventory"}
                     </Badge>

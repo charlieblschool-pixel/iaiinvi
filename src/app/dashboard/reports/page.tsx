@@ -113,31 +113,33 @@ export default async function ReportsPage() {
             passed with at least one approved or auto-charged reorder.
           </p>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs uppercase tracking-wider text-foreground-muted">
-                <th className="px-6 py-3 font-medium">Period</th>
-                <th className="px-6 py-3 font-medium">Orders</th>
-                <th className="px-6 py-3 font-medium">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {invoices.map((inv) => (
-                <tr key={inv.id} className="border-t border-border-hairline">
-                  <td className="px-6 py-3">
-                    {inv.periodStart.toLocaleDateString()} –{" "}
-                    {inv.periodEnd.toLocaleDateString()}
-                  </td>
-                  <td className="px-6 py-3 text-foreground-muted">
-                    {inv.itemCount}
-                  </td>
-                  <td className="px-6 py-3 font-[var(--font-mono)]">
-                    ${inv.totalAmount.toFixed(2)}
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs uppercase tracking-wider text-foreground-muted">
+                  <th className="px-6 py-3 font-medium">Period</th>
+                  <th className="px-6 py-3 font-medium">Orders</th>
+                  <th className="px-6 py-3 font-medium">Total</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {invoices.map((inv) => (
+                  <tr key={inv.id} className="border-t border-border-hairline">
+                    <td className="whitespace-nowrap px-6 py-3">
+                      {inv.periodStart.toLocaleDateString()} –{" "}
+                      {inv.periodEnd.toLocaleDateString()}
+                    </td>
+                    <td className="whitespace-nowrap px-6 py-3 text-foreground-muted">
+                      {inv.itemCount}
+                    </td>
+                    <td className="whitespace-nowrap px-6 py-3 font-[var(--font-mono)]">
+                      ${inv.totalAmount.toFixed(2)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </div>

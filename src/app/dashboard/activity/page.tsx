@@ -31,39 +31,41 @@ export default async function ActivityLogPage() {
         </div>
       ) : (
         <div className="overflow-hidden rounded-2xl border border-border-hairline bg-surface">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs uppercase tracking-wider text-foreground-muted">
-                <th className="px-6 py-3 font-medium">When</th>
-                <th className="px-6 py-3 font-medium">Type</th>
-                <th className="px-6 py-3 font-medium">Details</th>
-                <th className="px-6 py-3 font-medium">By</th>
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((entry) => (
-                <tr key={entry.id} className="border-t border-border-hairline">
-                  <td className="whitespace-nowrap px-6 py-3 text-foreground-muted">
-                    {entry.createdAt.toLocaleString(undefined, {
-                      month: "short",
-                      day: "numeric",
-                      hour: "numeric",
-                      minute: "2-digit",
-                    })}
-                  </td>
-                  <td className="whitespace-nowrap px-6 py-3">
-                    <Badge tone={ACTIVITY_TONES[entry.type]}>
-                      {ACTIVITY_LABELS[entry.type]}
-                    </Badge>
-                  </td>
-                  <td className="px-6 py-3">{entry.message}</td>
-                  <td className="whitespace-nowrap px-6 py-3 text-foreground-muted">
-                    {entry.user?.name ?? "System"}
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs uppercase tracking-wider text-foreground-muted">
+                  <th className="px-6 py-3 font-medium">When</th>
+                  <th className="px-6 py-3 font-medium">Type</th>
+                  <th className="px-6 py-3 font-medium">Details</th>
+                  <th className="px-6 py-3 font-medium">By</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {entries.map((entry) => (
+                  <tr key={entry.id} className="border-t border-border-hairline">
+                    <td className="whitespace-nowrap px-6 py-3 text-foreground-muted">
+                      {entry.createdAt.toLocaleString(undefined, {
+                        month: "short",
+                        day: "numeric",
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })}
+                    </td>
+                    <td className="whitespace-nowrap px-6 py-3">
+                      <Badge tone={ACTIVITY_TONES[entry.type]}>
+                        {ACTIVITY_LABELS[entry.type]}
+                      </Badge>
+                    </td>
+                    <td className="whitespace-nowrap px-6 py-3">{entry.message}</td>
+                    <td className="whitespace-nowrap px-6 py-3 text-foreground-muted">
+                      {entry.user?.name ?? "System"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>

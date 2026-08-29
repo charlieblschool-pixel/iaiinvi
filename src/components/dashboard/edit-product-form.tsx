@@ -203,6 +203,7 @@ export function EditProductForm({
       <div className="flex flex-col gap-2">
         <Label>Stock by location</Label>
         <div className="overflow-hidden rounded-lg border border-border-hairline">
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-surface-raised text-left text-xs uppercase tracking-wider text-foreground-muted">
@@ -243,6 +244,7 @@ export function EditProductForm({
               })}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
 

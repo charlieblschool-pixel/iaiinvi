@@ -127,33 +127,35 @@ export default async function OverviewPage() {
             reorder point.
           </p>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs uppercase tracking-wider text-foreground-muted">
-                <th className="px-6 py-3 font-medium">Product</th>
-                <th className="px-6 py-3 font-medium">Location</th>
-                <th className="px-6 py-3 font-medium">On hand</th>
-                <th className="px-6 py-3 font-medium">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {needsAttention.map((s) => (
-                <tr key={s.id} className="border-t border-border-hairline">
-                  <td className="px-6 py-3">{s.product.name}</td>
-                  <td className="px-6 py-3 text-foreground-muted">
-                    {s.location.name}
-                  </td>
-                  <td className="px-6 py-3 text-foreground-muted">
-                    {s.onHand} {s.product.unitLabel}
-                    {s.onHand === 1 ? "" : "s"}
-                  </td>
-                  <td className="px-6 py-3">
-                    <Badge tone={s.status.tone}>{s.status.label}</Badge>
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs uppercase tracking-wider text-foreground-muted">
+                  <th className="px-6 py-3 font-medium">Product</th>
+                  <th className="px-6 py-3 font-medium">Location</th>
+                  <th className="px-6 py-3 font-medium">On hand</th>
+                  <th className="px-6 py-3 font-medium">Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {needsAttention.map((s) => (
+                  <tr key={s.id} className="border-t border-border-hairline">
+                    <td className="px-6 py-3 whitespace-nowrap">{s.product.name}</td>
+                    <td className="px-6 py-3 whitespace-nowrap text-foreground-muted">
+                      {s.location.name}
+                    </td>
+                    <td className="px-6 py-3 whitespace-nowrap text-foreground-muted">
+                      {s.onHand} {s.product.unitLabel}
+                      {s.onHand === 1 ? "" : "s"}
+                    </td>
+                    <td className="px-6 py-3">
+                      <Badge tone={s.status.tone}>{s.status.label}</Badge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
