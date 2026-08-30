@@ -16,6 +16,19 @@ export function SignupForm({ googleEnabled }: { googleEnabled: boolean }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+
+  async function handleGoogleSignIn() {
+    setError(null);
+    setGoogleLoading(true);
+    try {
+      await signIn("google", { callbackUrl: "/dashboard/overview" });
+      // On success this redirects away — if we're still here, it didn't.
+    } catch {
+      setGoogleLoading(false);
+      setError("Couldn't reach Google. Check your connection (or an ad blocker/extension) and try again.");
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -62,10 +75,11 @@ export function SignupForm({ googleEnabled }: { googleEnabled: boolean }) {
         <>
           <button
             type="button"
-            onClick={() => signIn("google", { callbackUrl: "/dashboard/overview" })}
-            className="mt-6 flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-border-hairline bg-surface-raised text-sm font-medium transition-colors hover:border-foreground-muted"
+            onClick={handleGoogleSignIn}
+            disabled={googleLoading}
+            className="mt-6 flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-border-hairline bg-surface-raised text-sm font-medium transition-colors hover:border-foreground-muted disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Continue with Google
+            {googleLoading ? "Redirecting…" : "Continue with Google"}
           </button>
 
           <div className="my-6 flex items-center gap-3 text-xs text-foreground-muted">
