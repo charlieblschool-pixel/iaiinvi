@@ -47,11 +47,29 @@ type LocationMapping = {
   reorderPointColumn: string;
 };
 
+const GENERIC_QUANTITY_KEYWORDS = [
+  "on hand",
+  "onhand",
+  "qty",
+  "quantity",
+  "stock",
+  "count",
+  "amount",
+  "total",
+  "inventory",
+  "units",
+  "available",
+  "balance",
+];
+const GENERIC_REORDER_KEYWORDS = ["reorder", "min", "par", "threshold"];
+
 function guessLocationMappings(
   headers: string[],
   locations: LocationOption[],
 ): LocationMapping[] {
   const mappings: LocationMapping[] = [];
+  const usedHeaders = new Set<string>();
+
   for (const location of locations) {
     const nameLower = location.name.toLowerCase();
     const match = headers.find((h) => {
@@ -60,8 +78,34 @@ function guessLocationMappings(
     });
     if (match) {
       mappings.push({ locationId: location.id, onHandColumn: match, reorderPointColumn: "" });
+      usedHeaders.add(match);
     }
   }
+
+  // No column names matched an actual location — most spreadsheets just
+  // have one flat quantity column instead of one per location. Fall back
+  // to detecting that, so a plain "Quantity" column doesn't silently
+  // import everything as zero stock.
+  if (mappings.length === 0 && locations.length > 0) {
+    const qtyMatch = headers.find((h) =>
+      GENERIC_QUANTITY_KEYWORDS.some((kw) => h.toLowerCase().includes(kw)),
+    );
+    if (qtyMatch) {
+      const reorderMatch = headers.find(
+        (h) =>
+          h !== qtyMatch &&
+          GENERIC_REORDER_KEYWORDS.some((kw) => h.toLowerCase().includes(kw)),
+      );
+      const defaultLocation =
+        locations.find((l) => l.type === "STOREROOM") ?? locations[0];
+      mappings.push({
+        locationId: defaultLocation.id,
+        onHandColumn: qtyMatch,
+        reorderPointColumn: reorderMatch ?? "",
+      });
+    }
+  }
+
   return mappings;
 }
 
@@ -121,6 +165,12 @@ export function ImportForm({ locations }: { locations: LocationOption[] }) {
     const activeLocationMappings = locationMappings.filter(
       (m) => m.locationId && m.onHandColumn,
     );
+    if (activeLocationMappings.length === 0) {
+      setError(
+        "Map at least one quantity column under “Locations & quantities” before importing — otherwise every product imports with 0 stock.",
+      );
+      return;
+    }
     setLoading(true);
     setError(null);
 
@@ -244,9 +294,11 @@ export function ImportForm({ locations }: { locations: LocationOption[] }) {
           Locations &amp; quantities
         </label>
         <p className="text-xs text-foreground-muted">
-          If your spreadsheet has a separate quantity column per location
-          (e.g. Retail Shelf, Backbar, In Use), map each one here — every
-          product will get stock in all the locations you set.
+          Map at least one quantity column here, or every product imports
+          with 0 stock. If your spreadsheet has a separate quantity column
+          per location (e.g. Retail Shelf, Backbar, In Use), map each one —
+          otherwise map your single quantity column to whichever location
+          it represents.
         </p>
 
         <div className="mt-2 flex flex-col gap-3">
