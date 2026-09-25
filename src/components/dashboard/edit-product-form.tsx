@@ -4,14 +4,12 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Button, LinkButton } from "@/components/ui/button";
-import { LOCATION_LABELS } from "@/lib/locations";
-import type { LocationType } from "@/generated/prisma/enums";
+import { Badge } from "@/components/ui/badge";
+import { CategoryPicker, categoryPayload } from "@/components/dashboard/product-pickers";
 
-type LocationOption = { id: string; name: string; type: LocationType };
+type LocationOption = { id: string; name: string };
 type VendorOption = { id: string; name: string; leadTimeDays: number };
 type CategoryOption = { id: string; name: string };
-
-const NEW_CATEGORY_VALUE = "__new__";
 
 export function EditProductForm({
   product,
@@ -22,7 +20,10 @@ export function EditProductForm({
 }: {
   product: {
     id: string;
+    code: string;
     name: string;
+    brand: string | null;
+    sku: string | null;
     unitLabel: string;
     casePackSize: number;
     unitCost: number;
@@ -39,7 +40,7 @@ export function EditProductForm({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [categoryId, setCategoryId] = useState(product.categoryId ?? "");
+  const [category, setCategory] = useState(product.categoryId ?? "");
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -61,20 +62,16 @@ export function EditProductForm({
 
     const body: Record<string, unknown> = {
       name: form.get("name"),
+      brand: form.get("brand") || null,
+      sku: form.get("sku") || null,
       unitLabel: form.get("unitLabel"),
       casePackSize: Number(form.get("casePackSize")),
       unitCost: Number(form.get("unitCost")),
       avgWeeklyUsage: Number(form.get("avgWeeklyUsage")),
       vendorId: form.get("vendorId") || null,
       stockLevels,
+      ...categoryPayload(category),
     };
-
-    const submittedCategoryId = form.get("categoryId");
-    if (submittedCategoryId === NEW_CATEGORY_VALUE) {
-      body.newCategoryName = form.get("newCategoryName");
-    } else {
-      body.categoryId = submittedCategoryId || null;
-    }
 
     const res = await fetch(`/api/products/${product.id}`, {
       method: "PATCH",
@@ -113,9 +110,32 @@ export function EditProductForm({
       onSubmit={handleSubmit}
       className="mt-8 flex flex-col gap-5 rounded-2xl border border-border-hairline bg-surface p-6"
     >
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs font-medium uppercase tracking-wider text-foreground-muted">
+          Product code
+        </span>
+        <Badge className="font-mono">{product.code}</Badge>
+      </div>
+
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="name">Product name</Label>
-        <Input id="name" name="name" required defaultValue={product.name} />
+        <Input id="name" name="name" required maxLength={200} defaultValue={product.name} />
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label>Backbar or retail</Label>
+        <CategoryPicker categories={categories} value={category} onChange={setCategory} />
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="brand">Brand</Label>
+          <Input id="brand" name="brand" maxLength={100} defaultValue={product.brand ?? ""} />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="sku">Vendor SKU / UPC</Label>
+          <Input id="sku" name="sku" maxLength={80} defaultValue={product.sku ?? ""} />
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
@@ -163,32 +183,6 @@ export function EditProductForm({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="categoryId">Brand / category</Label>
-        <Select
-          id="categoryId"
-          name="categoryId"
-          value={categoryId}
-          onChange={(e) => setCategoryId(e.target.value)}
-        >
-          <option value="">No category</option>
-          {categories.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-          <option value={NEW_CATEGORY_VALUE}>+ New category…</option>
-        </Select>
-        {categoryId === NEW_CATEGORY_VALUE && (
-          <Input
-            name="newCategoryName"
-            required
-            placeholder="e.g. Unite"
-            className="mt-1.5"
-          />
-        )}
-      </div>
-
-      <div className="flex flex-col gap-1.5">
         <Label htmlFor="vendorId">Vendor</Label>
         <Select id="vendorId" name="vendorId" defaultValue={product.vendorId ?? ""}>
           <option value="">No vendor yet</option>
@@ -215,9 +209,7 @@ export function EditProductForm({
             <tbody>
               {locations.map((location) => {
                 const current = stockByLocation[location.id];
-                const label = location.name !== LOCATION_LABELS[location.type]
-                  ? location.name
-                  : LOCATION_LABELS[location.type];
+                const label = location.name;
                 return (
                   <tr key={location.id} className="border-t border-border-hairline">
                     <td className="px-3 py-2">{label}</td>

@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { requireOrg } from "@/lib/session";
 import { hasInventoryAccess } from "@/lib/billing";
 import { generateSuggestions } from "@/lib/reorder-engine";
+import { RETAIL, splitCategoryFromName, usageCategoryFromName } from "@/lib/categories";
+import { productNameKey } from "@/lib/text-match";
 
 const rowSchema = z.object({
   productName: z.string().min(1),
@@ -16,8 +18,43 @@ const bodySchema = z.object({
   periodDays: z.coerce.number().min(1).max(90).default(7),
 });
 
-// Locations sales are most likely pulled from, in priority order.
+// Legacy preset locations sales are most likely pulled from, in priority order.
 const SELL_LOCATION_PRIORITY = ["RETAIL_SHELF", "FRONT_COUNTER", "BACKBAR"];
+
+type MatchableProduct = { id: string; code: string; sku: string | null; name: string; category: { name: string } | null };
+
+/**
+ * Finds the product a sales line refers to: by invii code or vendor SKU,
+ * then by exact name — preferring the Retail version, since sales come off
+ * the retail shelf — and only then by a partial name match that is unique.
+ */
+function matchSalesLine<T extends MatchableProduct>(line: string, products: T[]): T | undefined {
+  const raw = line.trim().toLowerCase();
+  const byId = products.find((p) => p.code.toLowerCase() === raw || (p.sku && p.sku.toLowerCase() === raw));
+  if (byId) return byId;
+
+  const split = splitCategoryFromName(line);
+  const key = productNameKey(split.name);
+  const wanted = split.category ?? RETAIL;
+  const categoryOf = (p: T) => usageCategoryFromName(p.category?.name) ?? splitCategoryFromName(p.name).category;
+  const nameKeyOf = (p: T) => productNameKey(splitCategoryFromName(p.name).name);
+
+  const exact = products.filter((p) => nameKeyOf(p) === key);
+  const pick = (candidates: T[]) =>
+    candidates.find((p) => categoryOf(p) === wanted) ??
+    (candidates.length === 1 ? candidates[0] : candidates.find((p) => categoryOf(p) === null));
+  const exactPick = pick(exact);
+  if (exactPick) return exactPick;
+
+  if (key.length < 4) return undefined;
+  const partial = products.filter((p) => {
+    const k = nameKeyOf(p);
+    return k.includes(key) || key.includes(k);
+  });
+  const partialRetail = partial.filter((p) => categoryOf(p) === wanted);
+  if (partialRetail.length === 1) return partialRetail[0];
+  return partial.length === 1 ? partial[0] : undefined;
+}
 
 export async function POST(request: Request) {
   const { organization } = await requireOrg();
@@ -77,10 +114,7 @@ export async function POST(request: Request) {
   let updatedCount = 0;
 
   for (const entry of aggregated.values()) {
-    const key = entry.displayName.toLowerCase();
-    const product =
-      products.find((p) => p.name.toLowerCase() === key) ??
-      products.find((p) => p.name.toLowerCase().includes(key) || key.includes(p.name.toLowerCase()));
+    const product = matchSalesLine(entry.displayName, products);
 
     if (!product) {
       summary.push({
@@ -103,7 +137,9 @@ export async function POST(request: Request) {
     const sellStock =
       SELL_LOCATION_PRIORITY.map((type) =>
         product.stockLevels.find((s) => s.location.type === type),
-      ).find(Boolean) ?? product.stockLevels[0];
+      ).find(Boolean) ??
+      // Custom locations: take the sale from wherever the most units are.
+      [...product.stockLevels].sort((a, b) => b.onHand - a.onHand)[0];
 
     let newOnHand: number | null = null;
     if (sellStock) {

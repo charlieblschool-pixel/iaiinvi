@@ -4,7 +4,7 @@ import crypto from "crypto";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { slugify } from "@/lib/slugify";
-import { DEFAULT_LOCATIONS, LOCATION_LABELS } from "@/lib/locations";
+import { USAGE_CATEGORIES } from "@/lib/categories";
 import { trialEndDate } from "@/lib/billing";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import { sendVerificationEmail } from "@/lib/email";
@@ -65,11 +65,10 @@ export async function POST(request: Request) {
         name: businessName,
         slug,
         memberships: { create: { userId: user.id, role: "OWNER" } },
-        locations: {
-          create: DEFAULT_LOCATIONS.map((type) => ({
-            type,
-            name: LOCATION_LABELS[type],
-          })),
+        // Locations are created from the salon's own names (via import or
+        // Settings); every workspace starts with Backbar and Retail.
+        categories: {
+          create: USAGE_CATEGORIES.map((name) => ({ name })),
         },
         subscription: {
           create: { plan: "STANDARD", status: "trialing", trialEndsAt: trialEndDate() },

@@ -3,20 +3,30 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireOrg } from "@/lib/session";
 import { hasInventoryAccess } from "@/lib/billing";
+import { findOrCreateCategory, findOrCreateLocation } from "@/lib/catalog";
+import { reserveProductCodes } from "@/lib/product-codes";
 
-const createProductSchema = z.object({
-  name: z.string().min(1),
-  unitLabel: z.string().min(1),
-  casePackSize: z.coerce.number().int().min(1),
-  unitCost: z.coerce.number().min(0),
-  avgWeeklyUsage: z.coerce.number().min(0).default(0),
-  vendorId: z.string().optional().nullable(),
-  categoryId: z.string().optional().nullable(),
-  newCategoryName: z.string().optional(),
-  locationId: z.string().min(1),
-  onHand: z.coerce.number().int().min(0),
-  reorderPoint: z.coerce.number().int().min(0),
-});
+const createProductSchema = z
+  .object({
+    name: z.string().trim().min(1, "Product name is required").max(200),
+    brand: z.string().trim().max(100).optional(),
+    sku: z.string().trim().max(80).optional(),
+    unitLabel: z.string().trim().min(1, "Unit is required").max(40),
+    casePackSize: z.coerce.number().int().min(1),
+    unitCost: z.coerce.number().min(0),
+    avgWeeklyUsage: z.coerce.number().min(0).default(0),
+    vendorId: z.string().optional().nullable(),
+    categoryId: z.string().optional().nullable(),
+    newCategoryName: z.string().trim().max(60).optional(),
+    locationId: z.string().optional(),
+    newLocationName: z.string().trim().max(60).optional(),
+    onHand: z.coerce.number().int().min(0),
+    reorderPoint: z.coerce.number().int().min(0),
+  })
+  .refine((d) => d.locationId || d.newLocationName, {
+    message: "Choose a location",
+    path: ["locationId"],
+  });
 
 export async function POST(request: Request) {
   const { organization } = await requireOrg();
@@ -41,6 +51,8 @@ export async function POST(request: Request) {
   }
   const {
     name,
+    brand,
+    sku,
     unitLabel,
     casePackSize,
     unitCost,
@@ -49,52 +61,67 @@ export async function POST(request: Request) {
     categoryId,
     newCategoryName,
     locationId,
+    newLocationName,
     onHand,
     reorderPoint,
   } = parsed.data;
 
-  const location = await prisma.location.findFirst({
-    where: { id: locationId, organizationId: organization.id },
-  });
+  const location = newLocationName
+    ? await findOrCreateLocation(organization.id, newLocationName)
+    : await prisma.location.findFirst({
+        where: { id: locationId, organizationId: organization.id },
+      });
   if (!location) {
     return NextResponse.json({ error: "Location not found" }, { status: 404 });
   }
 
-  let resolvedCategoryId = categoryId || null;
-  if (!resolvedCategoryId && newCategoryName?.trim()) {
-    const category = await prisma.category.upsert({
-      where: {
-        organizationId_name: { organizationId: organization.id, name: newCategoryName.trim() },
-      },
-      update: {},
-      create: { name: newCategoryName.trim(), organizationId: organization.id },
+  let resolvedCategoryId: string | null = null;
+  if (categoryId) {
+    const category = await prisma.category.findFirst({
+      where: { id: categoryId, organizationId: organization.id },
     });
+    if (!category) return NextResponse.json({ error: "Category not found" }, { status: 404 });
     resolvedCategoryId = category.id;
+  } else if (newCategoryName) {
+    resolvedCategoryId = (await findOrCreateCategory(organization.id, newCategoryName)).id;
   }
 
-  const product = await prisma.product.create({
-    data: {
-      name,
-      unitLabel,
-      casePackSize,
-      unitCost,
-      avgWeeklyUsage,
-      vendorId: vendorId || null,
-      categoryId: resolvedCategoryId,
-      organizationId: organization.id,
-      stockLevels: {
-        create: { locationId, onHand, reorderPoint },
+  if (vendorId) {
+    const vendor = await prisma.vendor.findFirst({
+      where: { id: vendorId, organizationId: organization.id },
+    });
+    if (!vendor) return NextResponse.json({ error: "Vendor not found" }, { status: 404 });
+  }
+
+  const product = await prisma.$transaction(async (tx) => {
+    const [code] = await reserveProductCodes(tx, organization.id, 1);
+    return tx.product.create({
+      data: {
+        code,
+        name,
+        brand: brand || null,
+        sku: sku || null,
+        unitLabel,
+        casePackSize,
+        unitCost,
+        avgWeeklyUsage,
+        vendorId: vendorId || null,
+        categoryId: resolvedCategoryId,
+        organizationId: organization.id,
+        stockLevels: {
+          create: { locationId: location.id, onHand, reorderPoint },
+        },
       },
-    },
+    });
   });
 
   await prisma.activityLogEntry.create({
     data: {
       organizationId: organization.id,
       type: "STOCK_ADJUSTED",
-      message: `${name} added to ${location.name} — ${onHand} ${unitLabel}${onHand === 1 ? "" : "s"} on hand`,
+      message: `${name} (${product.code}) added to ${location.name} — ${onHand} ${unitLabel}${onHand === 1 ? "" : "s"} on hand`,
     },
   });
 
-  return NextResponse.json({ ok: true, id: product.id });
+  return NextResponse.json({ ok: true, id: product.id, code: product.code });
 }

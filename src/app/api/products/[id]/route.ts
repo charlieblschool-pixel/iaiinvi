@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireOrg } from "@/lib/session";
 import { hasInventoryAccess } from "@/lib/billing";
+import { findOrCreateCategory } from "@/lib/catalog";
 
 const stockLevelSchema = z.object({
   locationId: z.string().min(1),
@@ -12,8 +13,10 @@ const stockLevelSchema = z.object({
 
 const patchSchema = z.object({
   autoReorder: z.boolean().optional(),
-  name: z.string().min(1).optional(),
-  unitLabel: z.string().min(1).optional(),
+  name: z.string().trim().min(1).max(200).optional(),
+  brand: z.string().trim().max(100).nullable().optional(),
+  sku: z.string().trim().max(80).nullable().optional(),
+  unitLabel: z.string().trim().min(1).max(40).optional(),
   casePackSize: z.coerce.number().int().min(1).optional(),
   unitCost: z.coerce.number().min(0).optional(),
   avgWeeklyUsage: z.coerce.number().min(0).optional(),
@@ -62,15 +65,19 @@ export async function PATCH(
   } = parsed.data;
 
   let resolvedCategoryId = categoryId;
-  if (categoryId === undefined && newCategoryName?.trim()) {
-    const category = await prisma.category.upsert({
-      where: {
-        organizationId_name: { organizationId: organization.id, name: newCategoryName.trim() },
-      },
-      update: {},
-      create: { name: newCategoryName.trim(), organizationId: organization.id },
+  if (categoryId) {
+    const category = await prisma.category.findFirst({
+      where: { id: categoryId, organizationId: organization.id },
     });
-    resolvedCategoryId = category.id;
+    if (!category) return NextResponse.json({ error: "Category not found" }, { status: 404 });
+  } else if (categoryId === undefined && newCategoryName?.trim()) {
+    resolvedCategoryId = (await findOrCreateCategory(organization.id, newCategoryName)).id;
+  }
+  if (vendorId) {
+    const vendor = await prisma.vendor.findFirst({
+      where: { id: vendorId, organizationId: organization.id },
+    });
+    if (!vendor) return NextResponse.json({ error: "Vendor not found" }, { status: 404 });
   }
 
   if (stockLevels) {
@@ -97,6 +104,8 @@ export async function PATCH(
     where: { id },
     data: {
       ...productFields,
+      brand: productFields.brand === undefined ? undefined : productFields.brand || null,
+      sku: productFields.sku === undefined ? undefined : productFields.sku || null,
       vendorId: vendorId === undefined ? undefined : vendorId,
       categoryId: resolvedCategoryId === undefined ? undefined : resolvedCategoryId,
     },

@@ -51,6 +51,7 @@ export default async function ReorderApprovalsPage() {
                 key={s.id}
                 id={s.id}
                 productName={s.product.name}
+                productCode={s.product.code}
                 locationName={stockLevel?.location.name ?? "—"}
                 onHand={stockLevel?.onHand ?? 0}
                 unitLabel={s.product.unitLabel}

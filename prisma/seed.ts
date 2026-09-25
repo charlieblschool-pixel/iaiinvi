@@ -1,6 +1,8 @@
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
-import { DEFAULT_LOCATIONS, LOCATION_LABELS } from "@/lib/locations";
+import { BACKBAR, RETAIL, USAGE_CATEGORIES } from "@/lib/categories";
+import { EXAMPLE_LOCATIONS } from "@/lib/locations";
+import { formatProductCode } from "@/lib/product-codes";
 
 const DEMO_EMAIL = "demo@invii.ai";
 const DEMO_PASSWORD = "demopassword123";
@@ -26,19 +28,16 @@ async function main() {
       slug: "riverside-barber-co",
       memberships: { create: { userId: user.id, role: "OWNER" } },
       locations: {
-        create: DEFAULT_LOCATIONS.map((type) => ({
-          type,
-          name: LOCATION_LABELS[type],
-        })),
+        create: EXAMPLE_LOCATIONS.map((name, i) => ({ name, sortOrder: i + 1 })),
       },
+      categories: { create: USAGE_CATEGORIES.map((name) => ({ name })) },
       subscription: { create: { plan: "STANDARD" } },
     },
-    include: { locations: true },
+    include: { locations: true, categories: true },
   });
 
-  const locationByType = Object.fromEntries(
-    organization.locations.map((l) => [l.type, l]),
-  );
+  const locationByName = Object.fromEntries(organization.locations.map((l) => [l.name, l]));
+  const categoryByName = Object.fromEntries(organization.categories.map((c) => [c.name, c]));
 
   const vendor = await prisma.vendor.create({
     data: {
@@ -55,7 +54,8 @@ async function main() {
     unitCost: number;
     avgWeeklyUsage: number;
     autoReorder: boolean;
-    location: keyof typeof locationByType;
+    category: string;
+    location: string;
     onHand: number;
     reorderPoint: number;
   }[] = [
@@ -66,7 +66,8 @@ async function main() {
       unitCost: 7,
       avgWeeklyUsage: 8,
       autoReorder: true,
-      location: "BACKBAR",
+      category: BACKBAR,
+      location: "Cabinet",
       onHand: 6,
       reorderPoint: 8,
     },
@@ -77,7 +78,8 @@ async function main() {
       unitCost: 4,
       avgWeeklyUsage: 3,
       autoReorder: true,
-      location: "BACKBAR",
+      category: BACKBAR,
+      location: "Cabinet",
       onHand: 24,
       reorderPoint: 10,
     },
@@ -88,7 +90,8 @@ async function main() {
       unitCost: 3,
       avgWeeklyUsage: 2,
       autoReorder: false,
-      location: "BACKBAR",
+      category: BACKBAR,
+      location: "Cabinet",
       onHand: 15,
       reorderPoint: 6,
     },
@@ -99,7 +102,8 @@ async function main() {
       unitCost: 6,
       avgWeeklyUsage: 4,
       autoReorder: true,
-      location: "RETAIL_SHELF",
+      category: RETAIL,
+      location: "Top of Retail Shelf",
       onHand: 30,
       reorderPoint: 12,
     },
@@ -110,7 +114,8 @@ async function main() {
       unitCost: 7,
       avgWeeklyUsage: 5,
       autoReorder: true,
-      location: "RETAIL_SHELF",
+      category: RETAIL,
+      location: "Top of Retail Shelf",
       onHand: 0,
       reorderPoint: 8,
     },
@@ -121,7 +126,8 @@ async function main() {
       unitCost: 7,
       avgWeeklyUsage: 6,
       autoReorder: true,
-      location: "RETAIL_SHELF",
+      category: RETAIL,
+      location: "Top of Retail Shelf",
       onHand: 9,
       reorderPoint: 10,
     },
@@ -132,7 +138,8 @@ async function main() {
       unitCost: 15,
       avgWeeklyUsage: 1,
       autoReorder: false,
-      location: "IN_USE",
+      category: BACKBAR,
+      location: "Floor",
       onHand: 2,
       reorderPoint: 4,
     },
@@ -143,15 +150,17 @@ async function main() {
       unitCost: 5,
       avgWeeklyUsage: 1,
       autoReorder: false,
-      location: "IN_USE",
+      category: BACKBAR,
+      location: "Floor",
       onHand: 5,
       reorderPoint: 3,
     },
   ];
 
-  for (const p of products) {
+  for (const [i, p] of products.entries()) {
     await prisma.product.create({
       data: {
+        code: formatProductCode(i + 1),
         name: p.name,
         unitLabel: p.unitLabel,
         casePackSize: p.casePackSize,
@@ -160,9 +169,10 @@ async function main() {
         autoReorder: p.autoReorder,
         organizationId: organization.id,
         vendorId: vendor.id,
+        categoryId: categoryByName[p.category].id,
         stockLevels: {
           create: {
-            locationId: locationByType[p.location].id,
+            locationId: locationByName[p.location].id,
             onHand: p.onHand,
             reorderPoint: p.reorderPoint,
           },
@@ -170,6 +180,11 @@ async function main() {
       },
     });
   }
+
+  await prisma.organization.update({
+    where: { id: organization.id },
+    data: { nextProductNumber: products.length + 1 },
+  });
 
   await prisma.activityLogEntry.create({
     data: {

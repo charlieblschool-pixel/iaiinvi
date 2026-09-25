@@ -9,7 +9,7 @@ const ENTRIES: SearchEntry[] = [
   { label: "How the reorder engine works", href: "/#how-it-works", group: "Page" },
   { label: "Pricing", href: "/#pricing", group: "Page" },
   { label: "About invii.ai", href: "/about", group: "Page" },
-  { label: "9 location types", href: "/#locations", group: "Feature" },
+  { label: "Custom locations", href: "/#locations", group: "Feature" },
   { label: "Lead-time-aware reorder points", href: "/#features", group: "Feature" },
   { label: "Case-pack rounding", href: "/#features", group: "Feature" },
   { label: "Approve or auto-charge", href: "/#features", group: "Feature" },

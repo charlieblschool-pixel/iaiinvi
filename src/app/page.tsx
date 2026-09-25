@@ -6,7 +6,7 @@ import { PageFrame } from "@/components/marketing/page-frame";
 import { FloatingPathsBackdrop } from "@/components/marketing/floating-paths";
 import { LinkButton } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { LOCATION_LABELS, DEFAULT_LOCATIONS } from "@/lib/locations";
+import { EXAMPLE_LOCATIONS } from "@/lib/locations";
 import { STANDARD_PLAN } from "@/lib/stripe";
 
 const steps = [
@@ -34,8 +34,8 @@ const steps = [
 
 const features = [
   {
-    title: "9 location types out of the box",
-    body: "Storeroom, retail shelf, backbar, in-use, warehouse, display, front counter, mobile stock, back office — stock is tracked where it actually sits.",
+    title: "Your locations, your names",
+    body: "Top of the retail shelf, the drawer, the color cabinet, the register — import your count sheet and every spot is set up exactly as you name it.",
   },
   {
     title: "Lead-time-aware reorder points",
@@ -141,19 +141,20 @@ export default function Home() {
         <section id="locations" className="border-t border-border-hairline bg-surface/40">
           <div className="mx-auto max-w-6xl px-6 py-24">
             <h2 className="text-3xl font-semibold tracking-tight">
-              Stock lives in nine different places. invii.ai counts all of them.
+              Stock lives all over the salon. invii.ai counts every spot.
             </h2>
             <p className="mt-3 max-w-xl text-foreground-muted">
-              Set up once — every workspace starts with the full set, and you
-              can rename or add your own categories on top.
+              Bring the sheet you already count with. Your locations come
+              straight from it, and every product is sorted into Backbar or
+              Retail from its name.
             </p>
             <div className="mt-10 flex flex-wrap gap-3">
-              {DEFAULT_LOCATIONS.map((type) => (
+              {EXAMPLE_LOCATIONS.map((name) => (
                 <span
-                  key={type}
+                  key={name}
                   className="rounded-full border border-border-hairline bg-surface px-4 py-2 text-sm text-foreground-muted"
                 >
-                  {LOCATION_LABELS[type]}
+                  {name}
                 </span>
               ))}
             </div>

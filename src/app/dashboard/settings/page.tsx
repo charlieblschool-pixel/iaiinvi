@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { requireOrg } from "@/lib/session";
-import { LOCATION_LABELS } from "@/lib/locations";
+import { LOCATION_ORDER } from "@/lib/locations";
 import { Card } from "@/components/ui/card";
 import {
   OrganizationNameForm,
@@ -10,7 +10,7 @@ import {
   DeleteWorkspaceButton,
 } from "@/components/dashboard/settings-forms";
 import { ConnectionsCard } from "@/components/dashboard/connections-card";
-import { LocationEditChip } from "@/components/dashboard/location-edit-row";
+import { LocationManager } from "@/components/dashboard/location-edit-row";
 
 export default async function SettingsPage() {
   const { session, organization, membership } = await requireOrg();
@@ -18,7 +18,8 @@ export default async function SettingsPage() {
   const [locations, vendors, categories, memberships] = await Promise.all([
     prisma.location.findMany({
       where: { organizationId: organization.id },
-      orderBy: { name: "asc" },
+      orderBy: LOCATION_ORDER,
+      include: { _count: { select: { stockLevels: true } } },
     }),
     prisma.vendor.findMany({
       where: { organizationId: organization.id },
@@ -49,7 +50,7 @@ export default async function SettingsPage() {
       <div>
         <h1 className="text-2xl font-semibold">Settings</h1>
         <p className="mt-1 text-foreground-muted">
-          Manage your workspace, locations, and vendors.
+          Manage your workspace, locations, categories, and vendors.
         </p>
       </div>
 
@@ -58,26 +59,26 @@ export default async function SettingsPage() {
       <Card className="p-6">
         <h2 className="font-semibold">Locations</h2>
         <p className="mt-1 text-sm text-foreground-muted">
-          Every workspace tracks stock across these 9 location types. Click
-          one to rename it — spreadsheet imports still match it by its type
-          if the new name doesn&rsquo;t line up with a column value.
+          The places you keep product, in the order you walk them when
+          counting. Spreadsheet imports match these by name (typos included).
         </p>
-        <div className="mt-4 flex flex-wrap gap-2">
-          {locations.map((l) => (
-            <LocationEditChip
-              key={l.id}
-              id={l.id}
-              name={l.name}
-              typeLabel={LOCATION_LABELS[l.type]}
-            />
-          ))}
+        <div className="mt-4">
+          <LocationManager
+            canDelete={membership.role !== "STAFF"}
+            locations={locations.map((l) => ({
+              id: l.id,
+              name: l.name,
+              productCount: l._count.stockLevels,
+            }))}
+          />
         </div>
       </Card>
 
       <Card className="p-6">
         <h2 className="font-semibold">Categories</h2>
         <p className="mt-1 text-sm text-foreground-muted">
-          Organize products however makes sense for your business.
+          Every product is Backbar (used on clients) or Retail (sold to
+          clients). Add more only if you need them.
         </p>
         {categories.length > 0 && (
           <ul className="mt-4 flex flex-col gap-2 text-sm">

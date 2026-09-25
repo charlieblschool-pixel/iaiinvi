@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { LOCATION_ORDER } from "@/lib/locations";
 import { requireInventoryAccess } from "@/lib/session";
 import { EditProductForm } from "@/components/dashboard/edit-product-form";
 
@@ -18,7 +19,8 @@ export default async function EditProductPage({
     }),
     prisma.location.findMany({
       where: { organizationId: organization.id },
-      orderBy: { name: "asc" },
+      orderBy: LOCATION_ORDER,
+      select: { id: true, name: true },
     }),
     prisma.vendor.findMany({
       where: { organizationId: organization.id },
@@ -41,7 +43,10 @@ export default async function EditProductPage({
       <EditProductForm
         product={{
           id: product.id,
+          code: product.code,
           name: product.name,
+          brand: product.brand,
+          sku: product.sku,
           unitLabel: product.unitLabel,
           casePackSize: product.casePackSize,
           unitCost: product.unitCost,

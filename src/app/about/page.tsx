@@ -25,8 +25,8 @@ export default function AboutPage() {
               them without anyone logging it.
             </p>
             <p>
-              invii.ai starts from that reality. It tracks stock across nine
-              distinct location types, learns how fast each product actually
+              invii.ai starts from that reality. It tracks stock in every spot
+              you keep it, learns how fast each product actually
               moves, and calculates the reorder point from your real vendor
               lead times — not a generic default. When it&rsquo;s confident,
               it can place the order itself.

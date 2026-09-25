@@ -4,14 +4,15 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Button, LinkButton } from "@/components/ui/button";
-import { LOCATION_LABELS } from "@/lib/locations";
-import type { LocationType } from "@/generated/prisma/enums";
+import {
+  CategoryPicker,
+  LocationPicker,
+  categoryPayload,
+} from "@/components/dashboard/product-pickers";
 
-type LocationOption = { id: string; name: string; type: LocationType };
+type LocationOption = { id: string; name: string };
 type VendorOption = { id: string; name: string; leadTimeDays: number };
 type CategoryOption = { id: string; name: string };
-
-const NEW_CATEGORY_VALUE = "__new__";
 
 export function NewProductForm({
   locations,
@@ -25,36 +26,41 @@ export function NewProductForm({
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [categoryId, setCategoryId] = useState("");
+  const [category, setCategory] = useState("");
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (!category) {
+      setError("Choose Backbar or Retail.");
+      return;
+    }
     setError(null);
     setLoading(true);
 
     const form = new FormData(e.currentTarget);
-    const body = Object.fromEntries(form.entries()) as Record<string, string>;
-    if (body.categoryId === NEW_CATEGORY_VALUE) {
-      delete body.categoryId;
-    } else {
-      delete body.newCategoryName;
-    }
+    const body = {
+      ...(Object.fromEntries(form.entries()) as Record<string, string>),
+      ...categoryPayload(category),
+    };
 
-    const res = await fetch("/api/products", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      setError(data.error ?? "Couldn't add that product.");
+    try {
+      const res = await fetch("/api/products", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error ?? "Couldn't add that product.");
+        return;
+      }
+      router.push("/dashboard/inventory");
+      router.refresh();
+    } catch {
+      setError("Couldn't reach invii.ai — check your connection and try again.");
+    } finally {
       setLoading(false);
-      return;
     }
-
-    router.push("/dashboard/inventory");
-    router.refresh();
   }
 
   return (
@@ -64,13 +70,29 @@ export function NewProductForm({
     >
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="name">Product name</Label>
-        <Input id="name" name="name" required placeholder="Pomade — Matte Finish" />
+        <Input id="name" name="name" required maxLength={200} placeholder="Blowout Creme" />
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label>Backbar or retail</Label>
+        <CategoryPicker categories={categories} value={category} onChange={setCategory} />
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="brand">Brand</Label>
+          <Input id="brand" name="brand" maxLength={100} placeholder="Oribe" />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="sku">Vendor SKU / UPC</Label>
+          <Input id="sku" name="sku" maxLength={80} placeholder="Optional" />
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="unitLabel">Unit</Label>
-          <Input id="unitLabel" name="unitLabel" required placeholder="jar" />
+          <Input id="unitLabel" name="unitLabel" required defaultValue="bottle" />
         </div>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="casePackSize">Case pack size</Label>
@@ -112,32 +134,6 @@ export function NewProductForm({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="categoryId">Category</Label>
-        <Select
-          id="categoryId"
-          name="categoryId"
-          value={categoryId}
-          onChange={(e) => setCategoryId(e.target.value)}
-        >
-          <option value="">No category</option>
-          {categories.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-          <option value={NEW_CATEGORY_VALUE}>+ New category…</option>
-        </Select>
-        {categoryId === NEW_CATEGORY_VALUE && (
-          <Input
-            name="newCategoryName"
-            required
-            placeholder="e.g. Retail hair care"
-            className="mt-1.5"
-          />
-        )}
-      </div>
-
-      <div className="flex flex-col gap-1.5">
         <Label htmlFor="vendorId">Vendor</Label>
         <Select id="vendorId" name="vendorId" defaultValue="">
           <option value="">No vendor yet</option>
@@ -151,16 +147,7 @@ export function NewProductForm({
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="locationId">Location</Label>
-        <Select id="locationId" name="locationId" required defaultValue="">
-          <option value="" disabled>
-            Choose a location
-          </option>
-          {locations.map((l) => (
-            <option key={l.id} value={l.id}>
-              {l.name !== LOCATION_LABELS[l.type] ? l.name : LOCATION_LABELS[l.type]}
-            </option>
-          ))}
-        </Select>
+        <LocationPicker locations={locations} />
       </div>
 
       <div className="grid grid-cols-2 gap-4">
@@ -180,6 +167,10 @@ export function NewProductForm({
           />
         </div>
       </div>
+
+      <p className="text-xs text-foreground-muted">
+        A permanent product code (like P-0042) is assigned when you save.
+      </p>
 
       {error && <p className="text-sm text-status-bad">{error}</p>}
 

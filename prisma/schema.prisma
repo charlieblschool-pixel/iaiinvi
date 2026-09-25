@@ -94,6 +94,10 @@ model Organization {
   activity    ActivityLogEntry[]
   subscription Subscription?
   invoices    Invoice[]
+
+  // Sequence for human-readable product codes (P-0001, P-0002…). Bumped
+  // atomically whenever products are created — see src/lib/product-codes.ts.
+  nextProductNumber Int @default(1)
 }
 
 model Membership {
@@ -111,6 +115,8 @@ model Membership {
 
 // ---------- Inventory domain ----------
 
+// Legacy preset location kinds. New locations are free-form names (e.g. "Top
+// of Retail Shelf", "Register") and leave type null.
 enum LocationType {
   STOREROOM
   RETAIL_SHELF
@@ -124,9 +130,10 @@ enum LocationType {
 }
 
 model Location {
-  id             String       @id @default(cuid())
+  id             String        @id @default(cuid())
   name           String
-  type           LocationType
+  type           LocationType?
+  sortOrder      Int           @default(0)
   organizationId String
 
   organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -171,7 +178,12 @@ model Category {
 
 model Product {
   id             String   @id @default(cuid())
+  // Permanent per-workspace code assigned at creation (P-0001). Never
+  // changes, so reorder history and re-imports can always be traced back.
+  code           String
   name           String
+  brand          String?
+  sku            String? // vendor SKU / UPC, if the spreadsheet has one
   unitLabel      String // e.g. "bottle", "jar", "canister"
   casePackSize   Int      @default(1)
   unitCost       Float    @default(0)
@@ -187,6 +199,7 @@ model Product {
   stockLevels  StockLevel[]
   suggestions  ReorderSuggestion[]
 
+  @@unique([organizationId, code])
   @@index([organizationId])
 }
 

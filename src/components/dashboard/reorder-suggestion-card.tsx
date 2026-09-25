@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 export function ReorderSuggestionCard({
   id,
   productName,
+  productCode,
   locationName,
   onHand,
   unitLabel,
@@ -21,6 +22,7 @@ export function ReorderSuggestionCard({
 }: {
   id: string;
   productName: string;
+  productCode: string;
   locationName: string;
   onHand: number;
   unitLabel: string;
@@ -55,7 +57,7 @@ export function ReorderSuggestionCard({
       <div className="flex items-center justify-between">
         <div>
           <p className="text-xs font-medium uppercase tracking-wider text-foreground-muted">
-            {locationName}
+            <span className="font-mono normal-case">{productCode}</span> · {locationName}
           </p>
           <h3 className="mt-1 text-lg font-semibold">{productName}</h3>
         </div>
