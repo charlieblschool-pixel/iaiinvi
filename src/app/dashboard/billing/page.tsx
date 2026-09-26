@@ -121,16 +121,21 @@ export default async function BillingPage({
 
       <div className="rounded-2xl border border-border-hairline bg-surface">
         <div className="border-b border-border-hairline px-6 py-4">
-          <h2 className="font-semibold">Auto-charged reorders</h2>
+          <h2 className="font-semibold">
+            Auto-charged reorders{" "}
+            <span className="ml-1 rounded-full border border-status-warn/40 px-2 py-0.5 align-middle text-[11px] font-medium text-status-warn">
+              Coming soon
+            </span>
+          </h2>
           <p className="mt-1 text-sm text-foreground-muted">
-            Charged to the card on file the moment the reorder engine places
-            an order for a product with auto-reorder on.
+            Automatic ordering isn&rsquo;t live yet — nothing is charged for
+            reorders. Your plan subscription is the only charge.
           </p>
         </div>
         {recentCharges.length === 0 ? (
           <p className="px-6 py-8 text-sm text-foreground-muted">
-            Nothing auto-charged yet — enable auto-reorder on a product to
-            see charges appear here.
+            Nothing auto-charged. When automatic ordering launches, those
+            charges will show up here.
           </p>
         ) : (
           <ul className="divide-y divide-border-hairline">

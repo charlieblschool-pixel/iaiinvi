@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireOrg } from "@/lib/session";
 import { hasInventoryAccess } from "@/lib/billing";
 import { findOrCreateCategory } from "@/lib/catalog";
+import { AUTO_REORDER_LIVE } from "@/lib/features";
 
 const stockLevelSchema = z.object({
   locationId: z.string().min(1),
@@ -54,6 +55,9 @@ export async function PATCH(
   });
   if (!product) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+  if (parsed.data.autoReorder === true && !AUTO_REORDER_LIVE) {
+    return NextResponse.json({ error: "Auto-reorder is coming soon." }, { status: 409 });
   }
 
   const {

@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { AutoReorderToggle } from "@/components/dashboard/auto-reorder-toggle";
 import { stockStatus } from "@/lib/inventory";
 import { cn } from "@/lib/cn";
 
@@ -181,7 +180,7 @@ export function InventoryBoard({
                   ))}
                   <th className="px-4 py-3 text-right font-medium">Total</th>
                   <th className="px-4 py-3 font-medium">Status</th>
-                  <th className="px-4 py-3 font-medium">Auto-reorder</th>
+                  <th className="whitespace-nowrap px-4 py-3 font-medium">Auto-reorder</th>
                   <th className="px-4 py-3 font-medium" />
                 </tr>
               </thead>
@@ -275,11 +274,12 @@ function Group({
                 {status ? <Badge tone={status.tone}>{status.label}</Badge> : <Badge>Not counted</Badge>}
               </td>
               <td className="px-4 py-3">
-                <AutoReorderToggle
-                  productId={product.id}
-                  productName={product.name}
-                  initialValue={product.autoReorder}
-                />
+                <span
+                  className="whitespace-nowrap rounded-full border border-border-hairline px-2 py-0.5 text-[11px] font-medium text-foreground-muted"
+                  title="Automatic reordering is coming soon"
+                >
+                  Coming soon
+                </span>
               </td>
               <td className="px-4 py-3 text-right">
                 <Link

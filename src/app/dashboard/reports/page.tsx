@@ -33,10 +33,6 @@ export default async function ReportsPage() {
   );
   const turnoverRate = inventoryValue > 0 ? annualUsageValue / inventoryValue : 0;
 
-  const autoReorderCount = products.filter((p) => p.autoReorder).length;
-  const autoReorderCoverage =
-    products.length > 0 ? (autoReorderCount / products.length) * 100 : 0;
-
   const topVelocity = [...products].sort(
     (a, b) => b.avgWeeklyUsage - a.avgWeeklyUsage,
   )[0];
@@ -71,8 +67,8 @@ export default async function ReportsPage() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatTile label="Est. turnover rate" value={`${turnoverRate.toFixed(1)}x`} />
         <StatTile
-          label="Auto-reorder coverage"
-          value={`${autoReorderCoverage.toFixed(0)}%`}
+          label="Auto-reorder"
+          value="Coming soon"
         />
         <StatTile
           label="Highest velocity"

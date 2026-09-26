@@ -9,14 +9,11 @@ import { OnboardingChecklist } from "@/components/dashboard/onboarding-checklist
 export default async function OverviewPage() {
   const { organization } = await requireOrg();
 
-  const [stockLevels, pendingApprovals, recentActivity, vendorCount, productCount, autoReorderCount, subscription] =
+  const [stockLevels, recentActivity, vendorCount, productCount] =
     await Promise.all([
       prisma.stockLevel.findMany({
         where: { product: { organizationId: organization.id } },
         include: { product: true, location: true },
-      }),
-      prisma.reorderSuggestion.count({
-        where: { organizationId: organization.id, status: "PENDING" },
       }),
       prisma.activityLogEntry.findMany({
         where: { organizationId: organization.id },
@@ -25,8 +22,6 @@ export default async function OverviewPage() {
       }),
       prisma.vendor.count({ where: { organizationId: organization.id } }),
       prisma.product.count({ where: { organizationId: organization.id } }),
-      prisma.product.count({ where: { organizationId: organization.id, autoReorder: true } }),
-      prisma.subscription.findUnique({ where: { organizationId: organization.id } }),
     ]);
 
   const onboardingSteps = [
@@ -43,16 +38,10 @@ export default async function OverviewPage() {
       done: productCount > 0,
     },
     {
-      label: "Turn on auto-reorder for a product",
-      href: "/dashboard/inventory",
-      cta: "Go to inventory",
-      done: autoReorderCount > 0,
-    },
-    {
-      label: "Add a payment method for auto-charged reorders",
-      href: "/dashboard/billing",
-      cta: "Go to billing",
-      done: subscription?.status === "active" || subscription?.status === "trialing",
+      label: "Check your Reorder list",
+      href: "/dashboard/reports/reorder",
+      cta: "Open list",
+      done: false,
     },
   ];
 
@@ -104,11 +93,7 @@ export default async function OverviewPage() {
           value={outOfStockCount}
           tone={outOfStockCount > 0 ? "bad" : undefined}
         />
-        <StatTile
-          label="Pending approvals"
-          value={pendingApprovals}
-          tone={pendingApprovals > 0 ? "warn" : undefined}
-        />
+        <StatTile label="Reorder approvals" value="Coming soon" />
       </div>
 
       <div className="rounded-2xl border border-border-hairline bg-surface">

@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { stripe, stripeEnabled } from "@/lib/stripe";
 import { DEFAULT_LEAD_TIME_DAYS, engineOrderQuantity } from "@/lib/reorder-math";
+import { AUTO_REORDER_LIVE } from "@/lib/features";
 
 const DEDUPE_WINDOW_HOURS = 24;
 
@@ -99,7 +100,9 @@ export async function generateSuggestions(organizationId: string) {
       rawNeeded,
     });
 
-    if (product.autoReorder && canAutoCharge && stripe && subscription) {
+    const autoReorder = AUTO_REORDER_LIVE && product.autoReorder;
+
+    if (autoReorder && canAutoCharge && stripe && subscription) {
       try {
         const paymentIntent = await stripe.paymentIntents.create({
           amount: Math.round(totalCost * 100),
@@ -158,7 +161,7 @@ export async function generateSuggestions(organizationId: string) {
           }),
         ]);
       }
-    } else if (product.autoReorder) {
+    } else if (autoReorder) {
       // Auto-reorder is on, but there's no payment method on file yet — queue
       // for manual approval instead of silently failing to reorder.
       await prisma.$transaction([
