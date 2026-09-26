@@ -1,71 +1,42 @@
-import { prisma } from "@/lib/prisma";
 import { requireOrg } from "@/lib/session";
-import { generateSuggestions, countRecentAutoCharges } from "@/lib/reorder-engine";
-import { ReorderSuggestionCard } from "@/components/dashboard/reorder-suggestion-card";
+import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { LinkButton } from "@/components/ui/button";
+
+export const metadata = { title: "Reorder Approvals — invii.ai" };
 
 export default async function ReorderApprovalsPage() {
-  const { organization } = await requireOrg();
-
-  await generateSuggestions(organization.id);
-
-  const suggestions = await prisma.reorderSuggestion.findMany({
-    where: { organizationId: organization.id, status: "PENDING" },
-    include: {
-      product: { include: { vendor: true, stockLevels: { include: { location: true } } } },
-    },
-    orderBy: { createdAt: "desc" },
-  });
-
-  const autoChargedToday = await countRecentAutoCharges(organization.id);
+  await requireOrg();
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
+      <div>
+        <div className="flex items-center gap-3">
           <h1 className="text-2xl font-semibold">Reorder Approvals</h1>
-          <p className="mt-1 text-foreground-muted">
-            Approve what the engine recommends — or let auto-reorder run it.
-          </p>
+          <Badge tone="warn">Coming soon</Badge>
         </div>
-        {autoChargedToday > 0 && (
-          <Badge tone="good">
-            {autoChargedToday} auto-charged in the last 24h
-          </Badge>
-        )}
+        <p className="mt-1 text-foreground-muted">
+          One-tap approvals that place the order with your vendor for you.
+        </p>
       </div>
 
-      {suggestions.length === 0 ? (
-        <div className="rounded-2xl border border-border-hairline bg-surface px-6 py-16 text-center">
-          <p className="text-foreground-muted">
-            No pending approvals. Suggestions show up here when a product
-            without auto-reorder drops to its reorder point.
-          </p>
+      <Card className="px-6 py-14 text-center">
+        <p className="text-xs font-medium uppercase tracking-wider text-brand-light">Coming soon</p>
+        <h2 className="mx-auto mt-3 max-w-lg text-xl font-semibold">
+          Approving and placing orders from invii.ai is on its way
+        </h2>
+        <p className="mx-auto mt-3 max-w-lg text-sm text-foreground-muted">
+          Soon you&rsquo;ll be able to approve a suggestion and have the order sent to your vendor
+          automatically. Until then, the Reorder list shows exactly what to order, how many, and why —
+          ready to print or download for your next vendor order.
+        </p>
+        <div className="mt-8 flex flex-wrap justify-center gap-3">
+          <LinkButton href="/dashboard/reports/reorder">Open the Reorder list</LinkButton>
+          <LinkButton href="/dashboard/inventory" variant="secondary">
+            Go to inventory
+          </LinkButton>
         </div>
-      ) : (
-        <div className="flex flex-col gap-5">
-          {suggestions.map((s) => {
-            const stockLevel = s.product.stockLevels[0];
-            return (
-              <ReorderSuggestionCard
-                key={s.id}
-                id={s.id}
-                productName={s.product.name}
-                productCode={s.product.code}
-                locationName={stockLevel?.location.name ?? "—"}
-                onHand={stockLevel?.onHand ?? 0}
-                unitLabel={s.product.unitLabel}
-                avgWeeklyUsage={s.product.avgWeeklyUsage}
-                leadTimeDays={s.product.vendor?.leadTimeDays ?? 7}
-                reasoning={s.reasoning}
-                quantity={s.quantity}
-                totalCost={s.totalCost}
-                chargeError={s.chargeError}
-              />
-            );
-          })}
-        </div>
-      )}
+      </Card>
     </div>
   );
 }

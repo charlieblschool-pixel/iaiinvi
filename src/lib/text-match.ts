@@ -89,3 +89,44 @@ export function parseLooseNumber(raw: string | undefined | null): number | undef
 export function isStrictNumber(raw: string): boolean {
   return /^\(?\s*[$€£]?\s*-?[\d,]*\.?\d+\s*\)?$/.test(raw.trim());
 }
+
+const UNICODE_FRACTIONS: Record<string, number> = {
+  "¼": 0.25, "½": 0.5, "¾": 0.75, "⅓": 1 / 3, "⅔": 2 / 3, "⅛": 0.125,
+};
+
+export type ParsedCount = { value: number; inCases: boolean };
+
+/**
+ * Reads a stock count the way people actually write them:
+ *   "12", "1,200", "3+2" (counted in two spots), "1/2" or "½" (half a bottle),
+ *   "1 1/2", "4 btl", "6 ea", "2 cases" / "2 cs" (multiplied by case pack later).
+ * Returns undefined for anything that isn't a count ("n/a", "?", "x").
+ */
+export function parseCount(raw: string | undefined | null): ParsedCount | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  let text = String(raw).trim().toLowerCase();
+  if (!text) return undefined;
+  for (const [glyph, n] of Object.entries(UNICODE_FRACTIONS)) {
+    text = text.replace(new RegExp(`(\\d)?\\s*${glyph}`), (_, whole) => ` ${(whole ? Number(whole) : 0) + n}`);
+  }
+  const inCases = /\b(cases?|cs|cse|bx|boxes?)\b/.test(text);
+  text = text
+    .replace(/\b(cases?|cs|cse|bx|boxes?|bottles?|btls?|ea|each|units?|pcs?|pieces?|tubes?|jars?|cans?|pk|packs?)\b\.?/g, " ")
+    .replace(/[,$]/g, "")
+    .trim();
+
+  // Sums: "3+2", "3 + 2 + 1"
+  if (/^[\d.\s/]+(\+[\d.\s/]+)+$/.test(text)) {
+    const parts = text.split("+").map((p) => parseCount(p)?.value);
+    if (parts.every((p) => p !== undefined)) {
+      return { value: parts.reduce((a, b) => a! + b!, 0)!, inCases };
+    }
+  }
+  // Mixed fraction "1 1/2" or simple "1/2"
+  const fraction = text.match(/^(\d+)?\s*(\d+)\s*\/\s*(\d+)$/);
+  if (fraction && Number(fraction[3]) !== 0) {
+    return { value: Number(fraction[1] ?? 0) + Number(fraction[2]) / Number(fraction[3]), inCases };
+  }
+  const n = parseLooseNumber(text);
+  return n === undefined ? undefined : { value: n, inCases };
+}

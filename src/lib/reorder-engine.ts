@@ -1,9 +1,7 @@
 import { prisma } from "@/lib/prisma";
-import { roundUpToCasePack } from "@/lib/inventory";
 import { stripe, stripeEnabled } from "@/lib/stripe";
+import { DEFAULT_LEAD_TIME_DAYS, engineOrderQuantity } from "@/lib/reorder-math";
 
-const SAFETY_BUFFER_DAYS = 7;
-const DEFAULT_LEAD_TIME_DAYS = 7;
 const DEDUPE_WINDOW_HOURS = 24;
 
 export async function countRecentAutoCharges(organizationId: string) {
@@ -83,17 +81,13 @@ export async function generateSuggestions(organizationId: string) {
 
     const { product } = stock;
     const leadTimeDays = product.vendor?.leadTimeDays ?? DEFAULT_LEAD_TIME_DAYS;
-    const coverageDays = leadTimeDays + SAFETY_BUFFER_DAYS;
-    const dailyUsage = product.avgWeeklyUsage / 7;
-    const targetQty = dailyUsage * coverageDays;
-    const rawNeeded = Math.max(
-      targetQty - stock.onHand,
-      product.avgWeeklyUsage > 0 ? 1 : stock.reorderPoint - stock.onHand + 1,
-    );
-    const quantity = Math.max(
-      roundUpToCasePack(rawNeeded, product.casePackSize),
-      product.casePackSize,
-    );
+    const { quantity, rawNeeded } = engineOrderQuantity({
+      onHand: stock.onHand,
+      reorderPoint: stock.reorderPoint,
+      avgWeeklyUsage: product.avgWeeklyUsage,
+      leadTimeDays,
+      casePackSize: product.casePackSize,
+    });
     const totalCost = quantity * product.unitCost;
 
     const reasoning = buildReasoning({

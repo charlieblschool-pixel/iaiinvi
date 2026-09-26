@@ -28,6 +28,17 @@ export const EXAMPLE_LOCATIONS = [
 export const LOCATION_ORDER = [{ sortOrder: "asc" as const }, { name: "asc" as const }];
 
 /**
+ * Puts locations that actually hold stock first, then the empty ones —
+ * keeping the salon's own walk order within each group.
+ */
+export function stockedFirst<T extends { id: string }>(locations: T[], unitsByLocation: Map<string, number>): T[] {
+  return locations
+    .map((location, index) => ({ location, index, units: unitsByLocation.get(location.id) ?? 0 }))
+    .sort((a, b) => Number(b.units > 0) - Number(a.units > 0) || a.index - b.index)
+    .map((x) => x.location);
+}
+
+/**
  * Cleans a location name typed into a spreadsheet: strips "-----" / "===="
  * decorations and trailing colons, and fixes ALL CAPS.
  *   "TOP OF RETAIL SHELF -----" → "Top of Retail Shelf"

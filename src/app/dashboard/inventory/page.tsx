@@ -2,7 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireInventoryAccess } from "@/lib/session";
 import { LinkButton } from "@/components/ui/button";
-import { LOCATION_ORDER } from "@/lib/locations";
+import { LOCATION_ORDER, stockedFirst } from "@/lib/locations";
 import { USAGE_CATEGORIES, usageCategoryFromName } from "@/lib/categories";
 import {
   InventoryBoard,
@@ -28,8 +28,19 @@ export default async function InventoryPage() {
     }),
   ]);
 
-  const locationsWithStock = locations.filter((l) =>
-    products.some((p) => p.stockLevels.some((s) => s.locationId === l.id)),
+  // Locations holding stock first, then ones with only zero counts; never-used
+  // locations are left off the table (they're still in Settings).
+  const unitsByLocation = new Map<string, number>();
+  const usedLocationIds = new Set<string>();
+  for (const p of products) {
+    for (const s of p.stockLevels) {
+      usedLocationIds.add(s.locationId);
+      unitsByLocation.set(s.locationId, (unitsByLocation.get(s.locationId) ?? 0) + s.onHand);
+    }
+  }
+  const locationsWithStock = stockedFirst(
+    locations.filter((l) => usedLocationIds.has(l.id)),
+    unitsByLocation,
   );
   const boardLocations: BoardLocation[] = locationsWithStock.map((l) => ({ id: l.id, name: l.name }));
 

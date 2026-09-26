@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { LOCATION_ORDER } from "@/lib/locations";
+import { LOCATION_ORDER, stockedFirst } from "@/lib/locations";
 import { requireInventoryAccess } from "@/lib/session";
 import { EditProductForm } from "@/components/dashboard/edit-product-form";
 
@@ -60,7 +60,10 @@ export default async function EditProductPage({
             { onHand: s.onHand, reorderPoint: s.reorderPoint },
           ]),
         )}
-        locations={locations}
+        locations={stockedFirst(
+          locations,
+          new Map(product.stockLevels.map((s) => [s.locationId, s.onHand > 0 ? s.onHand : 0.5])),
+        )}
         vendors={vendors}
         categories={categories}
       />

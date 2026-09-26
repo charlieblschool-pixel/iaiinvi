@@ -66,12 +66,7 @@ export default async function ReportsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Reports</h1>
-        <p className="mt-1 text-foreground-muted">
-          Derived from your actual stock, usage, and reorder data.
-        </p>
-      </div>
+      <h2 className="sr-only">Overview</h2>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatTile label="Est. turnover rate" value={`${turnoverRate.toFixed(1)}x`} />

@@ -9,7 +9,10 @@
     "lint": "eslint",
     "postinstall": "prisma generate",
     "db:migrate": "prisma migrate deploy",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "test:import": "tsx tests/import-parser.test.ts",
+    "test:reorder": "tsx tests/reorder-math.test.ts",
+    "test": "npm run test:import && npm run test:reorder"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.3",

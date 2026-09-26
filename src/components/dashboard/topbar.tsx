@@ -13,7 +13,7 @@ export function Topbar({
   onMenuClick: () => void;
 }) {
   return (
-    <header className="flex h-16 shrink-0 items-center justify-between gap-4 border-b border-border-hairline px-4 sm:px-8">
+    <header className="print:hidden flex h-16 shrink-0 items-center justify-between gap-4 border-b border-border-hairline px-4 sm:px-8">
       <button
         type="button"
         onClick={onMenuClick}

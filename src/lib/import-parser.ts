@@ -12,6 +12,7 @@
 import {
   BACKBAR,
   RETAIL,
+  matchCategoryValue,
   matchUsageCategory,
   splitCategoryFromName,
   type UsageCategory,
@@ -20,6 +21,7 @@ import { cleanLocationName, locationKey } from "@/lib/locations";
 import {
   isStrictNumber,
   normalizeText,
+  parseCount,
   parseLooseNumber,
   productNameKey,
 } from "@/lib/text-match";
@@ -79,6 +81,8 @@ export type ParseOptions = {
   categoryOverrides?: Record<string, UsageCategory>;
   /** Spreadsheet row numbers the user said are products, not section headings. */
   notSectionRows?: number[];
+  /** Original sheet row number for each row, when rows were rearranged (side-by-side lists). */
+  rowNumbers?: number[];
 };
 
 export type ParsedStock = { location: string; onHand?: number; reorderPoint?: number };
@@ -297,6 +301,12 @@ export function detectHeaderRow(rows: SheetRows): number {
   return -1;
 }
 
+/** Plain numbers plus the way people write counts: "3+2", "1/2", "2 cases", "4 btl". */
+function isCountLike(value: string): boolean {
+  if (isStrictNumber(value)) return true;
+  return /^[\d\s.,/+½¼¾⅓⅔⅛]+\s*(cases?|cs|bx|boxes?|bottles?|btls?|ea|each|units?|pcs?|tubes?|jars?)?\.?$/i.test(value.trim()) && /\d|[½¼¾⅓⅔⅛]/.test(value);
+}
+
 type ColumnStats = { nonEmpty: number; numeric: number; distinct: number };
 
 function columnStats(rows: SheetRows, headerRow: number): ColumnStats[] {
@@ -311,7 +321,7 @@ function columnStats(rows: SheetRows, headerRow: number): ColumnStats[] {
       const value = cell(row, c);
       if (isBlank(value)) continue;
       stats[c].nonEmpty += 1;
-      if (isStrictNumber(value)) stats[c].numeric += 1;
+      if (isCountLike(value)) stats[c].numeric += 1;
       seen[c].add(value.toLowerCase());
     }
   }
@@ -541,6 +551,8 @@ export function parseSheet(rows: SheetRows, mapping: ColumnMapping, options: Par
 
   let sectionLocation: string | null = null;
   let sectionCategory: UsageCategory | null = null;
+  let filledLocation: string | null = null;
+  let filledCategory: UsageCategory | null = null;
 
   const dataColumns = new Set<number>([
     ...Object.values(fields).filter((v): v is number => v !== undefined),
@@ -550,7 +562,7 @@ export function parseSheet(rows: SheetRows, mapping: ColumnMapping, options: Par
 
   for (let r = mapping.headerRow + 1; r < rows.length; r++) {
     const row = rows[r] ?? [];
-    const rowNumber = r + 1;
+    const rowNumber = options.rowNumbers?.[r] ?? r + 1;
     const filled = row
       .map((value, index) => ({ value: (value ?? "").toString().trim(), index }))
       .filter((c) => !isBlank(c.value));
@@ -568,7 +580,8 @@ export function parseSheet(rows: SheetRows, mapping: ColumnMapping, options: Par
     // ----- Section headings -----
     const otherData = filled.filter((c) => c.index !== fields.name && dataColumns.has(c.index));
     if (filled.length === 1 && !notSection.has(rowNumber) && !isStrictNumber(filled[0].value)) {
-      const text = filled[0].value;
+      // "Location: Floor", "Area - Cabinet" → "Floor", "Cabinet"
+      const text = filled[0].value.replace(/^\s*(location|loc|area|section|zone|spot|place)\s*[:#\-–—]\s*/i, "");
       const nextRow = rows[r + 1] ?? [];
       const nextIsRule = nextRow.some((c) => (c ?? "").trim() && DECORATION.test((c ?? "").trim())) &&
         nextRow.every((c) => !(c ?? "").trim() || DECORATION.test((c ?? "").trim()));
@@ -580,10 +593,11 @@ export function parseSheet(rows: SheetRows, mapping: ColumnMapping, options: Par
         isAllCaps(text) ||
         nextIsRule ||
         Boolean(wholeCategory) ||
+        text !== filled[0].value ||
         (!split.category && LOCATION_WORDS.test(text));
 
       if (looksLikeSection) {
-        const heading: SectionHeading = { row: rowNumber, text };
+        const heading: SectionHeading = { row: rowNumber, text: filled[0].value };
         if (wholeCategory) {
           sectionCategory = wholeCategory;
           heading.category = wholeCategory;
@@ -596,6 +610,8 @@ export function parseSheet(rows: SheetRows, mapping: ColumnMapping, options: Par
           sectionLocation = noteLocation(cleanLocationName(text));
           heading.location = sectionLocation;
         }
+        filledLocation = null;
+        filledCategory = null;
         sections.push(heading);
         continue;
       }
@@ -606,20 +622,37 @@ export function parseSheet(rows: SheetRows, mapping: ColumnMapping, options: Par
       continue;
     }
 
-    const split = splitCategoryFromName(nameCell);
+    // "1. Shampoo", "3) Mask", "• Serum", "- Gel" → drop the list marker.
+    const cleanName = nameCell.replace(/^\s*(?:\d{1,4}\s*[.)]\s+|[•·*▪►–—-]\s+)/, "").trim() || nameCell;
+    const split = splitCategoryFromName(cleanName);
     if (!split.name) {
       skipped.push({ row: rowNumber, message: `"${nameCell}" has no product name besides the category` });
       continue;
     }
 
+    // Location / category columns: a blank cell under a filled one means the
+    // same value (merged cells, or people only writing it once per group).
     const rawCategoryCell = cell(row, fields.category);
-    const columnCategory =
-      matchUsageCategory(rawCategoryCell) ?? splitCategoryFromName(rawCategoryCell).category;
+    let columnCategory: UsageCategory | null = null;
+    if (rawCategoryCell) {
+      columnCategory = matchCategoryValue(rawCategoryCell);
+      filledCategory = columnCategory;
+    } else if (fields.category !== undefined) {
+      columnCategory = filledCategory;
+    }
 
+    let rowLocation: string | null = sectionLocation;
     const rowLocationCell = cell(row, fields.location);
-    const rowLocation = rowLocationCell
-      ? noteLocation(cleanLocationName(rowLocationCell))
-      : sectionLocation;
+    if (rowLocationCell) {
+      // "Backbar - Cabinet" in a location cell carries a category too.
+      const locSplit = splitCategoryFromName(rowLocationCell);
+      const label = locSplit.category && locSplit.name ? locSplit.name : rowLocationCell;
+      if (locSplit.category && locSplit.name && !columnCategory) columnCategory = locSplit.category;
+      filledLocation = noteLocation(cleanLocationName(label));
+      rowLocation = filledLocation;
+    } else if (fields.location !== undefined && filledLocation) {
+      rowLocation = filledLocation;
+    }
 
     // Stock for this row, per category variant. Normally a single variant;
     // a sheet with "Backbar" and "Retail" quantity columns yields two.
@@ -634,16 +667,30 @@ export function parseSheet(rows: SheetRows, mapping: ColumnMapping, options: Par
           ? "section"
           : null;
 
+    const casePack = parseLooseNumber(cell(row, fields.casePackSize));
     const readQty = (column: number, label: string): number | undefined => {
       const raw = cell(row, column);
       if (isBlank(raw)) return undefined;
-      const n = parseLooseNumber(raw);
-      if (n === undefined) {
+      const count = parseCount(raw);
+      if (count === undefined) {
         notes.push({ row: rowNumber, message: `"${raw}" in ${label} isn't a number — left blank` });
         return undefined;
       }
+      let n = count.value;
+      if (count.inCases) {
+        if (casePack && casePack > 1) {
+          n *= casePack;
+          notes.push({ row: rowNumber, message: `"${raw}" in ${label} read as ${Math.round(n)} units (case of ${casePack})` });
+        } else {
+          notes.push({ row: rowNumber, message: `"${raw}" in ${label} is in cases but there's no case size — imported as ${Math.round(n)}` });
+        }
+      }
       if (n < 0) {
         notes.push({ row: rowNumber, message: `Negative count (${raw}) in ${label} imported as 0` });
+      }
+      if (n > 0 && n < 1) {
+        // A partly used bottle still counts as one on the shelf.
+        return 1;
       }
       return roundQty(n);
     };
@@ -697,7 +744,6 @@ export function parseSheet(rows: SheetRows, mapping: ColumnMapping, options: Par
     }
 
     const nameKey = productNameKey(split.name);
-    const casePack = parseLooseNumber(cell(row, fields.casePackSize));
     const unitCost = parseLooseNumber(cell(row, fields.unitCost));
     const codeCell = cell(row, fields.code).toUpperCase();
 
@@ -759,6 +805,42 @@ export function parseSheet(rows: SheetRows, mapping: ColumnMapping, options: Par
     notes,
     usedDefaultLocation,
   };
+}
+
+/**
+ * Printable count sheets often put two lists side by side:
+ *   Product | Qty |   | Product | Qty
+ * When the header row repeats the product-name column, split the sheet into
+ * those blocks and stack them, keeping each row's original row number.
+ */
+export function unstackSideBySide(rows: SheetRows): { rows: SheetRows; rowNumbers: number[] } | null {
+  const headerRow = detectHeaderRow(rows);
+  if (headerRow < 0) return null;
+  const headers = rows[headerRow].map((h) => headerKey(h ?? ""));
+  const nameMatcher = FIELD_MATCHERS.find(([f]) => f === "name")![1];
+  const starts = headers.flatMap((h, i) => (h && nameMatcher(h) && !isStrictNumber(h) ? [i] : []));
+  if (starts.length < 2) return null;
+  // Each block must repeat the first block's header layout.
+  const width = starts[1] - starts[0];
+  const first = headers.slice(starts[0], starts[0] + width).filter(Boolean).join("|");
+  const blocks = starts.filter((s) => headers.slice(s, s + width).filter(Boolean).join("|") === first);
+  if (blocks.length < 2) return null;
+
+  const out: SheetRows = [];
+  const rowNumbers: number[] = [];
+  for (let r = 0; r <= headerRow; r++) {
+    out.push(rows[r].slice(blocks[0], blocks[0] + width));
+    rowNumbers.push(r + 1);
+  }
+  for (const start of blocks) {
+    for (let r = headerRow + 1; r < rows.length; r++) {
+      const slice = (rows[r] ?? []).slice(start, start + width);
+      if (slice.every((c) => !(c ?? "").trim())) continue;
+      out.push(slice);
+      rowNumbers.push(r + 1);
+    }
+  }
+  return { rows: out, rowNumbers };
 }
 
 /** Combines several sheets (e.g. one tab per location) into one result. */

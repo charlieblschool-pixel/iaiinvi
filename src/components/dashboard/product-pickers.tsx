@@ -42,10 +42,10 @@ export function CategoryPicker({
           aria-checked={value === option.value}
           onClick={() => onChange(option.value)}
           className={cn(
-            "h-11 min-w-28 rounded-lg border px-4 text-sm font-medium transition-colors",
+            "h-11 min-w-28 rounded-lg border px-4 text-sm font-medium transition-all duration-150 active:scale-[0.97]",
             value === option.value
               ? "border-brand bg-brand/10 text-brand-light"
-              : "border-border-hairline bg-surface-raised text-foreground-muted hover:border-foreground-muted",
+              : "border-border-hairline bg-surface-raised text-foreground-muted hover:border-white/40 hover:text-foreground",
           )}
         >
           {option.label}

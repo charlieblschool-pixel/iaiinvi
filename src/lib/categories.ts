@@ -60,6 +60,15 @@ export function usageCategoryFromName(name: string | null | undefined): UsageCat
   return USAGE_CATEGORIES.find((c) => compact(c) === value) ?? null;
 }
 
+// Short codes only trusted inside brackets — "(BB)", "[RT]". "(R)" is left
+// alone because it's usually a ® mark in a brand name.
+function bracketCode(text: string): UsageCategory | null {
+  const value = normalizeText(text).replace(/[^a-z]+/g, "");
+  if (["bb", "bkbr", "pro", "prof"].includes(value)) return BACKBAR;
+  if (["rt", "ret", "rtl"].includes(value)) return RETAIL;
+  return null;
+}
+
 // Separators people put between a product name and its category:
 // "Name - retail", "Name – retail", "Name | retail", "Name / retail",
 // "Name: retail". A bare hyphen inside a word ("anti-frizz") is not a
@@ -103,15 +112,15 @@ export function splitCategoryFromName(raw: string): {
     }
   }
 
-  // 2. Parenthetical: "Shampoo (retail)", "[Backbar] Shampoo".
+  // 2. Parenthetical: "Shampoo (retail)", "[Backbar] Shampoo", "Bleach (BB)".
   const trailing = original.match(/^(.*?)\s*[([{]\s*([^()[\]{}]+?)\s*[)\]}]\s*$/);
   if (trailing) {
-    const match = matchUsageCategory(trailing[2]);
+    const match = matchUsageCategory(trailing[2]) ?? bracketCode(trailing[2]);
     if (match && tidyName(trailing[1])) return { name: tidyName(trailing[1]), category: match };
   }
   const leading = original.match(/^\s*[([{]\s*([^()[\]{}]+?)\s*[)\]}]\s*(.*)$/);
   if (leading) {
-    const match = matchUsageCategory(leading[1]);
+    const match = matchUsageCategory(leading[1]) ?? bracketCode(leading[1]);
     if (match && tidyName(leading[2])) return { name: tidyName(leading[2]), category: match };
   }
 
@@ -132,4 +141,16 @@ export function splitCategoryFromName(raw: string): {
   }
 
   return { name: original, category: null };
+}
+
+/**
+ * Matches a value from a dedicated Backbar/Retail column, where short codes
+ * are unambiguous: "BB", "B", "Back", "Pro" → Backbar; "R", "RT", "Ret" → Retail.
+ */
+export function matchCategoryValue(text: string | undefined | null): UsageCategory | null {
+  if (!text) return null;
+  const value = normalizeText(text).replace(/[^a-z]+/g, "");
+  if (["bb", "b", "back", "pro", "prof", "salon", "service", "bkbr", "bbar"].includes(value)) return BACKBAR;
+  if (["r", "rt", "ret", "rtl", "sale", "sell", "resell"].includes(value)) return RETAIL;
+  return matchUsageCategory(text) ?? splitCategoryFromName(text).category;
 }

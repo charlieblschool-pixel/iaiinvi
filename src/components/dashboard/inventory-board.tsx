@@ -104,10 +104,10 @@ export function InventoryBoard({
 
   const chip = (active: boolean) =>
     cn(
-      "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+      "rounded-full border px-3 py-1 text-xs font-medium transition-all duration-150 active:scale-95",
       active
         ? "border-brand bg-brand/10 text-brand-light"
-        : "border-border-hairline text-foreground-muted hover:border-foreground-muted",
+        : "border-border-hairline text-foreground-muted hover:border-white/40 hover:text-foreground",
     );
 
   return (

@@ -1,12 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import { requireInventoryAccess } from "@/lib/session";
 import { ImportForm } from "@/components/dashboard/import-form";
-import { LOCATION_ORDER } from "@/lib/locations";
+import { LOCATION_ORDER, stockedFirst } from "@/lib/locations";
 
 export default async function ImportInventoryPage() {
   const { organization } = await requireInventoryAccess();
 
-  const [locations, products] = await Promise.all([
+  const [locations, products, stock] = await Promise.all([
     prisma.location.findMany({
       where: { organizationId: organization.id },
       orderBy: LOCATION_ORDER,
@@ -16,7 +16,13 @@ export default async function ImportInventoryPage() {
       where: { organizationId: organization.id },
       select: { id: true, code: true, name: true, sku: true, category: { select: { name: true } } },
     }),
+    prisma.stockLevel.groupBy({
+      by: ["locationId"],
+      where: { location: { organizationId: organization.id } },
+      _sum: { onHand: true },
+    }),
   ]);
+  const unitsByLocation = new Map(stock.map((s) => [s.locationId, s._sum.onHand ?? 0]));
 
   return (
     <div className="mx-auto max-w-5xl">
@@ -27,7 +33,7 @@ export default async function ImportInventoryPage() {
       </p>
       <div className="mt-8">
         <ImportForm
-          locations={locations}
+          locations={stockedFirst(locations, unitsByLocation)}
           products={products.map((p) => ({
             id: p.id,
             code: p.code,

@@ -17,6 +17,7 @@ import {
   guessMapping,
   mergeParseResults,
   parseSheet,
+  unstackSideBySide,
   type ColumnMapping,
   type FieldKey,
   type ParseResult,
@@ -30,7 +31,7 @@ import {
   type ImportProduct,
 } from "@/lib/import-plan";
 
-type Sheet = { name: string; rows: SheetRows };
+type Sheet = { name: string; rows: SheetRows; rowNumbers?: number[]; sideBySide?: boolean };
 type Outcome = {
   created: number;
   updated: number;
@@ -144,7 +145,12 @@ export function ImportForm({
     }
     setReading(true);
     try {
-      const workbook = (await readWorkbook(file)).filter((s) => hasData(s.rows));
+      const workbook = (await readWorkbook(file))
+        .filter((s) => hasData(s.rows))
+        .map((s): Sheet => {
+          const unstacked = unstackSideBySide(s.rows);
+          return unstacked ? { ...s, ...unstacked, sideBySide: true } : s;
+        });
       if (workbook.length === 0) {
         setError("We couldn't find any rows in that file. Make sure it has a product list with at least one product.");
         return;
@@ -175,6 +181,7 @@ export function ImportForm({
         defaultLocation: fallback,
         categoryOverrides: overrides,
         notSectionRows: notSectionRows[i],
+        rowNumbers: sheets[i].rowNumbers,
       });
     if (sheetIndex === ALL_SHEETS) {
       return mergeParseResults(
@@ -269,6 +276,11 @@ export function ImportForm({
       <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
         <div className="min-w-0">
           <p className="truncate font-medium">{fileName}</p>
+          {sheets.some((s) => s.sideBySide) && (
+            <p className="mt-1 text-xs text-foreground-muted">
+              Side-by-side lists were combined into one — row numbers still match your sheet.
+            </p>
+          )}
           {sheets.length > 1 ? (
             <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
               <span className="text-foreground-muted">Tab:</span>
@@ -702,7 +714,7 @@ function CategoryToggle({
           type="button"
           onClick={() => onChange(c)}
           className={cn(
-            "rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors",
+            "rounded-full px-2.5 py-0.5 text-xs font-medium transition-all duration-150 active:scale-95",
             value === c ? "bg-brand text-white" : "text-foreground-muted hover:text-foreground",
           )}
         >
@@ -767,10 +779,10 @@ function ProductsTable({
               key={t.key}
               onClick={() => setFilter(t.key)}
               className={cn(
-                "rounded-full border px-3 py-1 text-xs font-medium",
+                "rounded-full border px-3 py-1 text-xs font-medium transition-all duration-150 active:scale-95",
                 filter === t.key
                   ? "border-brand bg-brand/10 text-brand-light"
-                  : "border-border-hairline text-foreground-muted hover:border-foreground-muted",
+                  : "border-border-hairline text-foreground-muted hover:border-white/40 hover:text-foreground",
               )}
             >
               {t.label}

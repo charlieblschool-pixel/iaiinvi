@@ -54,8 +54,61 @@ body {
 }
 
 :focus-visible {
-  outline: 2px solid var(--brand-light);
+  outline: 2px solid rgba(255, 255, 255, 0.85);
   outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/* Page entrance: short fade + lift so tab changes ease in instead of cutting. */
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.animate-page-in {
+  animation: page-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Loading placeholders */
+@keyframes skeleton-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+.skeleton {
+  border-radius: 1rem;
+  background: var(--surface-raised);
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+/* Smoother open/close for disclosure panels */
+details > summary::-webkit-details-marker {
+  display: none;
+}
+details[open] > :not(summary) {
+  animation: page-in 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media print {
+  :root {
+    --background: #ffffff;
+    --surface: #ffffff;
+    --surface-raised: #f4f4f5;
+    --border-hairline: #d4d4d8;
+    --foreground: #111113;
+    --foreground-muted: #52525b;
+  }
+  .animate-page-in {
+    animation: none;
+  }
+  main {
+    overflow: visible !important;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
