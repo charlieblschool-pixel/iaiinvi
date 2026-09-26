@@ -10,6 +10,7 @@ import {
   type BoardLocation,
   type BoardProduct,
 } from "@/components/dashboard/inventory-board";
+import { TrackButton, TrackProvider, type TrackProduct } from "@/components/dashboard/track-dialog";
 
 const UNCATEGORIZED = "Needs a category";
 
@@ -79,72 +80,94 @@ export default async function InventoryPage() {
 
   const uncategorized = groupMap.get(UNCATEGORIZED)?.length ?? 0;
 
+  // Everything Track needs to find a product and take stock from the right place.
+  const locationName = new Map(locations.map((l) => [l.id, l.name]));
+  const locationRank = new Map(locationsWithStock.map((l, i) => [l.id, i]));
+  const trackProducts: TrackProduct[] = products.map((p) => ({
+    id: p.id,
+    code: p.code,
+    name: p.name,
+    brand: p.brand,
+    sku: p.sku,
+    category: usageCategoryFromName(p.category?.name) ?? p.category?.name ?? UNCATEGORIZED,
+    unitLabel: p.unitLabel,
+    stocks: [...p.stockLevels]
+      .sort((a, b) => (locationRank.get(a.locationId) ?? 99) - (locationRank.get(b.locationId) ?? 99))
+      .map((s) => ({ locationId: s.locationId, locationName: locationName.get(s.locationId) ?? "—", onHand: s.onHand })),
+  }));
+
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Inventory</h1>
-          <p className="mt-1 text-foreground-muted">
-            {products.length} product{products.length === 1 ? "" : "s"} · {locations.length} location
-            {locations.length === 1 ? "" : "s"}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {products.length > 0 && (
-            <a
-              href="/api/export/inventory"
-              download
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-border-hairline bg-surface-raised px-4 text-sm font-medium text-foreground transition-colors hover:border-foreground-muted"
-            >
-              Export count sheet
-            </a>
-          )}
-          <LinkButton href="/dashboard/inventory/import-sales" variant="secondary">
-            Sync Booker sales
-          </LinkButton>
-          <LinkButton href="/dashboard/inventory/import" variant="secondary">
-            Import spreadsheet
-          </LinkButton>
-          <LinkButton href="/dashboard/inventory/new">+ Add product</LinkButton>
-        </div>
-      </div>
-
-      {uncategorized > 0 && (
-        <div className="rounded-2xl border border-status-warn/40 bg-status-warn-bg/40 px-5 py-4 text-sm">
-          <span className="font-medium">
-            {uncategorized} product{uncategorized === 1 ? " isn't" : "s aren't"} marked Backbar or Retail.
-          </span>{" "}
-          <span className="text-foreground-muted">
-            Export the count sheet, fill in the Category column, and import it back — or edit them one
-            by one.
-          </span>
-        </div>
-      )}
-
-      {products.length === 0 ? (
-        <div className="rounded-2xl border border-border-hairline bg-surface px-6 py-16 text-center">
-          <p className="text-foreground-muted">
-            No products yet. Import the spreadsheet you already count with — we&rsquo;ll sort
-            everything into Backbar and Retail and set up your locations from it.
-          </p>
-          <div className="mt-6 flex justify-center gap-3">
-            <LinkButton href="/dashboard/inventory/import">Import spreadsheet</LinkButton>
+    <TrackProvider products={trackProducts}>
+      <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold">Inventory</h1>
+            <p className="mt-1 text-foreground-muted">
+              {products.length} product{products.length === 1 ? "" : "s"} · {locations.length} location
+              {locations.length === 1 ? "" : "s"}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {products.length > 0 && (
+              <a
+                href="/api/export/inventory"
+                download
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-border-hairline bg-surface-raised px-4 text-sm font-medium text-foreground transition-colors hover:border-foreground-muted"
+              >
+                Export count sheet
+              </a>
+            )}
+            <LinkButton href="/dashboard/inventory/import-sales" variant="secondary">
+              Sync Booker sales
+            </LinkButton>
+            <LinkButton href="/dashboard/inventory/import" variant="secondary">
+              Import spreadsheet
+            </LinkButton>
             <LinkButton href="/dashboard/inventory/new" variant="secondary">
               + Add product
             </LinkButton>
+            {products.length > 0 && <TrackButton />}
           </div>
         </div>
-      ) : (
-        <InventoryBoard locations={boardLocations} groups={groups} />
-      )}
 
-      <p className="text-sm text-foreground-muted">
-        Locations without stock yet aren&rsquo;t shown.{" "}
-        <Link href="/dashboard/settings" className="text-brand-light hover:underline">
-          Manage locations in Settings
-        </Link>
-        .
-      </p>
-    </div>
+        {uncategorized > 0 && (
+          <div className="rounded-2xl border border-status-warn/40 bg-status-warn-bg/40 px-5 py-4 text-sm">
+            <span className="font-medium">
+              {uncategorized} product{uncategorized === 1 ? " isn't" : "s aren't"} marked Backbar or Retail.
+            </span>{" "}
+            <span className="text-foreground-muted">
+              Export the count sheet, fill in the Category column, and import it back — or edit them one
+              by one.
+            </span>
+          </div>
+        )}
+
+        {products.length === 0 ? (
+          <div className="rounded-2xl border border-border-hairline bg-surface px-6 py-16 text-center">
+            <p className="text-foreground-muted">
+              No products yet. Import the spreadsheet you already count with — we&rsquo;ll sort
+              everything into Backbar and Retail and set up your locations from it.
+            </p>
+            <div className="mt-6 flex justify-center gap-3">
+              <LinkButton href="/dashboard/inventory/import">Import spreadsheet</LinkButton>
+              <LinkButton href="/dashboard/inventory/new" variant="secondary">
+                + Add product
+              </LinkButton>
+            </div>
+          </div>
+        ) : (
+          <InventoryBoard locations={boardLocations} groups={groups} />
+        )}
+
+        <p className="text-sm text-foreground-muted">
+          Locations without stock yet aren&rsquo;t shown.{" "}
+          <Link href="/dashboard/settings" className="text-brand-light hover:underline">
+            Manage locations in Settings
+          </Link>
+          . Press <kbd className="rounded border border-border-hairline px-1 text-xs">T</kbd> anywhere on
+          this page to track something sold, used or wasted.
+        </p>
+      </div>
+    </TrackProvider>
   );
 }

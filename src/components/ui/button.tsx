@@ -33,7 +33,7 @@ export function Button({
   className,
   children,
   ...props
-}: CommonProps & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+}: CommonProps & React.ComponentProps<"button">) {
   return (
     <button
       className={cn(

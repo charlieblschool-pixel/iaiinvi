@@ -25,6 +25,7 @@ model User {
   sessions    Session[]
   memberships Membership[]
   activity    ActivityLogEntry[]
+  movements   StockMovement[]
 }
 
 model Session {
@@ -94,6 +95,7 @@ model Organization {
   activity    ActivityLogEntry[]
   subscription Subscription?
   invoices    Invoice[]
+  movements   StockMovement[]
 
   // Sequence for human-readable product codes (P-0001, P-0002…). Bumped
   // atomically whenever products are created — see src/lib/product-codes.ts.
@@ -138,6 +140,7 @@ model Location {
 
   organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   stockLevels  StockLevel[]
+  movements    StockMovement[]
 
   @@index([organizationId])
 }
@@ -198,6 +201,7 @@ model Product {
   category     Category?           @relation(fields: [categoryId], references: [id])
   stockLevels  StockLevel[]
   suggestions  ReorderSuggestion[]
+  movements    StockMovement[]
 
   @@unique([organizationId, code])
   @@index([organizationId])
@@ -214,6 +218,41 @@ model StockLevel {
   location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
 
   @@unique([productId, locationId])
+}
+
+// ---------- Tracking (Inventory → Track) ----------
+
+enum MovementType {
+  SOLD
+  USED
+  WASTED
+}
+
+// One tracked event: product sold, used on a client, or wasted. Stock is
+// taken from the location at the time; undoing puts it back.
+model StockMovement {
+  id             String       @id @default(cuid())
+  type           MovementType
+  quantity       Int
+  // How much actually came off the shelf count (less than quantity when the
+  // count was already short) — what Undo puts back.
+  takenFromStock Int          @default(0)
+  // Cost per unit when tracked, so reports keep their value if prices change.
+  unitCost       Float        @default(0)
+  note           String?
+  createdAt      DateTime     @default(now())
+  organizationId String
+  productId      String
+  locationId     String?
+  userId         String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  location     Location?    @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([productId])
 }
 
 // ---------- AI reorder engine ----------

@@ -12,6 +12,7 @@ import {
   CreditCard,
   Settings,
   ListChecks,
+  Receipt,
 } from "lucide-react";
 import { Logo } from "@/components/brand/logo";
 import { cn } from "@/lib/cn";
@@ -34,7 +35,10 @@ const items: NavItem[] = [
     href: "/dashboard/reports",
     label: "Reports",
     icon: ChartBar,
-    children: [{ href: "/dashboard/reports/reorder", label: "Reorder list", icon: ListChecks }],
+    children: [
+      { href: "/dashboard/reports/reorder", label: "Reorder list", icon: ListChecks },
+      { href: "/dashboard/reports/tracked", label: "Sold & wasted", icon: Receipt },
+    ],
   },
   { href: "/dashboard/billing", label: "Billing", icon: CreditCard },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },

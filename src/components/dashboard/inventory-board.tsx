@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { stockStatus } from "@/lib/inventory";
 import { cn } from "@/lib/cn";
+import { TrackRowButton } from "@/components/dashboard/track-dialog";
 
 export type BoardLocation = {
   id: string;
@@ -281,7 +282,9 @@ function Group({
                   Coming soon
                 </span>
               </td>
-              <td className="px-4 py-3 text-right">
+              <td className="whitespace-nowrap px-4 py-3 text-right">
+                <TrackRowButton productId={product.id} productName={product.name} />
+                <span className="mx-2 text-border-hairline" aria-hidden>|</span>
                 <Link
                   href={`/dashboard/inventory/${product.id}/edit`}
                   className="text-sm text-brand-light hover:underline"

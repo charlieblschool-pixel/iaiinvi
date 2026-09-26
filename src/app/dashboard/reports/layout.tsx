@@ -14,6 +14,7 @@ export default function ReportsLayout({ children }: { children: React.ReactNode 
         tabs={[
           { href: "/dashboard/reports", label: "Overview" },
           { href: "/dashboard/reports/reorder", label: "Reorder list" },
+          { href: "/dashboard/reports/tracked", label: "Sold & wasted" },
         ]}
       />
       {children}
