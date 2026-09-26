@@ -12,9 +12,11 @@
     "db:seed": "tsx prisma/seed.ts",
     "test:import": "tsx tests/import-parser.test.ts",
     "test:reorder": "tsx tests/reorder-math.test.ts",
-    "test": "npm run test:import && npm run test:reorder"
+    "test": "npm run test:import && npm run test:reorder && npm run test:analysis",
+    "test:analysis": "tsx tests/sheet-analysis.test.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0",
     "@auth/prisma-adapter": "^2.11.3",
     "@prisma/adapter-pg": "^7.9.0",
     "@prisma/client": "^7.9.0",

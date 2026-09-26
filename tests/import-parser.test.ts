@@ -275,5 +275,67 @@ Mask - retail,1,,Developer - backbar,4
   eq("not side by side", unstackSideBySide(csv(`Product,Qty\nShampoo,1`)), null);
 }
 
+// ---- Round 3: movement columns are never locations ----
+t = run("movements with ending", `
+Product,Initial,Received,Used,Wasted,Ending,Retail Price
+Shampoo - retail,10,6,4,1,11,28
+Foils - backbar,50,0,20,2,28,0
+`, "Cabinet");
+eq("ending wins, no fake locations", t.summary, ["Shampoo [Retail] Cabinet=11", "Foils [Backbar] Cabinet=28"]);
+eq("movement columns listed as ignored", t.mapping.ignoredColumns?.map((c) => c.reason), ["movement", "movement", "movement", "movement", "noise"]);
+eq("no location columns", t.mapping.locationColumns.length, 0);
+
+t = run("derive on hand", `
+Product,Initial Count,Received,Used,Wasted,Sold
+Shampoo - retail,10,6,,1,4
+Mask - retail,3,,,,
+Serum - retail,,5,,,
+`, "Floor");
+eq("derived", t.summary, ["Shampoo [Retail] Floor=11", "Mask [Retail] Floor=3", "Serum [Retail] Floor=-"]);
+eq("derive note", t.result.notes[0]?.message.startsWith("No ending count column"), true);
+
+t = run("count plus waste", `
+Item,Initial,Wasted,Count
+Gel - retail,9,1,7
+`, "Floor");
+eq("count column wins", t.summary, ["Gel [Retail] Floor=7"]);
+
+t = run("unknown numbers ignored", `
+Product,Floor,Cabinet,Week 3,Suite 2
+Foils - backbar,2,3,99,4
+`);
+eq("only real places", t.mapping.locationColumns.map((l) => l.location), ["Floor", "Cabinet", "Suite 2"]);
+eq("unknown listed", t.mapping.ignoredColumns?.map((c) => c.note.split(" — ")[0]), ["Week 3"]);
+
+t = run("noise and order qty", `
+Product,On Hand,Par,Reorder Qty,Variance,Back Order,Current Price
+Foils - backbar,4,2,12,-1,3,9.5
+`, "Cabinet");
+eq("noise", [t.summary, t.mapping.fields.quantity, t.mapping.fields.reorderPoint], [["Foils [Backbar] Cabinet=4/rp2"], 1, 2]);
+
+t = run("known custom place", `
+Product,The Nook,Initial
+Foils - backbar,2,9
+`);
+{
+  const rows = csv(`Product,The Nook,Initial\nFoils - backbar,2,9`);
+  const m = guessMapping(rows, ["The Nook"]);
+  eq("existing location name counts", m.locationColumns.map((l) => l.location), ["The Nook"]);
+  eq("without it, not a place", guessMapping(rows).locationColumns.length, 0);
+}
+
+// Notes scribbled into the product column are skipped; real products survive.
+t = run("notes", `
+Product,Qty
+Gel - retail,2
+remember to restock friday,
+Note: count the van too,
+Order Up Gel - retail,1
+Check Mate Clay,3
+call SalonCentric about the late delivery!!,
+`);
+eq("notes skipped", t.summary.map((l) => l.split(" [")[0]), ["Gel", "Order Up Gel", "Check Mate Clay"]);
+eq("notes reported", t.result.skipped.length, 3);
+
 console.log(failures ? `\n${failures} FAILED` : "\nALL PASSED");
 process.exit(failures ? 1 : 0);

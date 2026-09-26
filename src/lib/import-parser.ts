@@ -72,6 +72,20 @@ export type ColumnMapping = {
   fields: Partial<Record<FieldKey, number>>;
   locationColumns: LocationColumn[];
   categoryColumns: CategoryColumn[];
+  /**
+   * Stock-movement columns (Initial, Received, Used, Wasted…). Only used to
+   * work out on-hand when the sheet has no ending/current count column.
+   */
+  movements?: { start: number; add: number[]; subtract: number[] };
+  /** Number columns deliberately left out, with why — shown in the review. */
+  ignoredColumns?: IgnoredColumn[];
+};
+
+export type IgnoredColumn = {
+  column: number;
+  reason: "movement" | "not-a-location" | "noise";
+  /** Plain-language explanation, e.g. "Wasted — a stock movement, not a place". */
+  note: string;
 };
 
 export type ParseOptions = {
@@ -83,6 +97,10 @@ export type ParseOptions = {
   notSectionRows?: number[];
   /** Original sheet row number for each row, when rows were rearranged (side-by-side lists). */
   rowNumbers?: number[];
+  /** Rows (by index) Claude identified as headings for the products below. */
+  headingRows?: Record<number, { location: string | null; category: UsageCategory | null }>;
+  /** Rows (by index) Claude identified as not products — totals, notes, dates. */
+  skipRows?: Record<number, string>;
 };
 
 export type ParsedStock = { location: string; onHand?: number; reorderPoint?: number };
@@ -124,6 +142,47 @@ export type ParseResult = {
 
 // ---------- Header detection & column guessing ----------
 
+// Stock-movement vocabulary. These columns describe what happened to stock
+// during a period — they are never places, and never the current count.
+const MOVEMENT_START = [
+  "initial", "beginning", "begin", "start", "starting", "opening balance", "opening count",
+  "opening stock", "previous", "prior", "last count", "last week", "last month",
+  "carried over", "carry over", "carryover", "brought forward", "b/f", "bf",
+];
+const MOVEMENT_ADD = [
+  "received", "receive", "receiving", "recd", "rec'd", "rcvd", "delivered", "delivery",
+  "deliveries", "purchased", "purchases", "bought", "added", "restocked", "transfer in",
+  "transferred in", "qty in", "stock in", "in",
+];
+const MOVEMENT_SUBTRACT = [
+  "used", "usage", "use", "consumed", "wasted", "waste", "wastage", "damaged", "damage",
+  "broken", "expired", "spoiled", "lost", "missing", "stolen", "shrink", "shrinkage", "sold",
+  "sales", "sale", "returned", "returns", "transfer out", "transferred out", "qty out",
+  "stock out", "out", "samples", "sampled", "testers", "tester", "comp", "comped",
+  "given away", "discarded", "thrown out", "spilled", "write off", "written off",
+];
+// The actual count at the end of the period — preferred over everything.
+const ENDING_WORDS = [
+  "ending", "end count", "end of month", "end qty", "closing", "close", "final", "remaining",
+  "left", "current", "actual", "physical", "counted", "new count", "this week", "this month",
+];
+// Numbers that aren't stock at all.
+const NOISE_WORDS = [
+  "variance", "difference", "diff", "discrepancy", "expected", "theoretical", "adjustment",
+  "adj", "order qty", "to order", "reorder qty", "reorder quantity", "suggested order",
+  "order amount", "needed", "need", "requested", "back order", "backorder", "on order",
+  "value", "total value", "extended", "ext", "retail value", "cost value", "margin",
+];
+
+function headerHas(header: string, words: string[]): string | undefined {
+  return words.find((w) => new RegExp(`(^|[^a-z])${w.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")}([^a-z]|$)`).test(header));
+}
+
+/** Title-cases a header for notes: "wasted" → "Wasted". */
+function showHeader(raw: string) {
+  return raw.trim() || "(blank)";
+}
+
 type Matcher = (header: string) => boolean;
 
 const has = (...words: string[]): Matcher => (h) => words.some((w) => h.includes(w));
@@ -154,7 +213,12 @@ const FIELD_MATCHERS: [FieldKey, Matcher][] = [
   ],
   ["unitCost", (h) => has("cost", "wholesale", "net price", "unit price")(h) || (exactly("price")(h))],
   ["casePackSize", (h) => has("case", "pack", "per box", "pk")(h) && !has("price", "cost")(h)],
-  ["reorderPoint", (h) => REORDER_WORDS.some((w) => new RegExp(`\\b${w}\\b`).test(h))],
+  [
+    "reorderPoint",
+    (h) =>
+      REORDER_WORDS.some((w) => new RegExp(`\\b${w}\\b`).test(h)) &&
+      !headerHas(h, ["reorder qty", "reorder quantity", "order qty", "to order", "suggested order", "reorder amount"]),
+  ],
   ["vendor", has("vendor", "supplier", "distributor", "distributer", "purchased from", "bought from", "source")],
   ["brand", has("brand", "manufacturer", "mfr", "product line", "collection", "maker")],
   ["unit", (h) => exactly("unit", "units of measure", "uom", "unit type", "container", "unit label", "u/m")(h)],
@@ -374,6 +438,40 @@ export function guessMapping(rows: SheetRows, knownLocations: string[] = []): Co
   const cols = stats.length;
   const fields: Partial<Record<FieldKey, number>> = {};
   const used = new Set<number>();
+  const ignoredColumns: IgnoredColumn[] = [];
+  const movementStart: number[] = [];
+  const movementAdd: number[] = [];
+  const movementSubtract: number[] = [];
+  const endingColumns: number[] = [];
+
+  // Stock movements, ending counts and noise are recognised first so words
+  // like "Initial Count" or "Wasted" can never become a quantity or a place.
+  if (headerRow >= 0) {
+    for (let c = 0; c < cols; c++) {
+      const h = headers[c];
+      if (!h || isStrictNumber(h)) continue;
+      if (knownByKey.has(locationKey(h))) continue; // an existing place always wins
+      if (stats[c].nonEmpty > 0 && numericRatio(stats[c]) < 0.6) continue; // text column
+      if (headerHas(h, ["price", "cost", "msrp", "wholesale", "$", "%", "case", "pack"])) continue; // money / pack size
+      const raw = showHeader(cell(rows[headerRow], c));
+      if (headerHas(h, NOISE_WORDS)) {
+        ignoredColumns.push({ column: c, reason: "noise", note: `${raw} — not a stock count` });
+        used.add(c);
+      } else if (headerHas(h, ENDING_WORDS) && !/\bend ?cap\b/.test(h)) {
+        endingColumns.push(c);
+        used.add(c);
+      } else if (headerHas(h, MOVEMENT_START)) {
+        movementStart.push(c);
+        used.add(c);
+      } else if (headerHas(h, MOVEMENT_SUBTRACT)) {
+        movementSubtract.push(c);
+        used.add(c);
+      } else if (headerHas(h, MOVEMENT_ADD) && !/\bin stock\b/.test(h)) {
+        movementAdd.push(c);
+        used.add(c);
+      }
+    }
+  }
 
   // "Floor Par" / "Cabinet reorder pt" next to a "Floor" / "Cabinet" column is
   // that location's reorder point — hold those back from the global fields.
@@ -411,10 +509,13 @@ export function guessMapping(rows: SheetRows, knownLocations: string[] = []): Co
       const words = normalizeText(label).split(/[^a-z0-9#]+/).filter(Boolean);
       if (words.every((w) => QTY_FILLER.has(w))) continue;
       if (isNotALocation(h)) continue;
+      if (!knownByKey.has(locationKey(label)) && !isPlaceName(label) && !matchUsageCategory(label)) continue;
       perLocationQty.add(c);
     }
     perLocationQty.forEach((c) => used.add(c));
   }
+
+  if (endingColumns.length > 0) fields.quantity = endingColumns[0];
 
   if (headerRow >= 0) {
     for (const [field, match] of FIELD_MATCHERS) {
@@ -459,7 +560,10 @@ export function guessMapping(rows: SheetRows, knownLocations: string[] = []): Co
       if (!h || isStrictNumber(h) || s.nonEmpty === 0 || numericRatio(s) < 0.7) continue;
 
       if (stripWords(h, LOCATION_RP_WORDS) !== h) continue;
-      if (!perLocationQty.has(c) && isNotALocation(h)) continue;
+      if (!perLocationQty.has(c) && isNotALocation(h)) {
+        ignoredColumns.push({ column: c, reason: "noise", note: `${showHeader(raw)} — not a stock count or a place, so it wasn't used` });
+        continue;
+      }
 
       const label = locationLabel(h);
       if (!label) continue;
@@ -467,6 +571,16 @@ export function guessMapping(rows: SheetRows, knownLocations: string[] = []): Co
       if (category) {
         categoryColumns.push({ column: c, category });
         used.add(c);
+        continue;
+      }
+      // Only real places become locations: one you already have, or a
+      // heading that names a place (shelf, drawer, cabinet, register…).
+      if (!knownByKey.has(locationKey(h)) && !knownByKey.has(locationKey(label)) && !isPlaceName(label)) {
+        ignoredColumns.push({
+          column: c,
+          reason: "not-a-location",
+          note: `${showHeader(raw)} — doesn't look like a place, so it wasn't counted`,
+        });
         continue;
       }
       locationColumns.push({
@@ -502,13 +616,42 @@ export function guessMapping(rows: SheetRows, knownLocations: string[] = []): Co
     delete fields.quantity;
   }
 
-  return { headerRow, fields, locationColumns, categoryColumns };
+  // Movement columns: with a real count available they're just ignored;
+  // without one, on-hand = start + received − used/wasted/sold.
+  const describe = (c: number, what: string) =>
+    ignoredColumns.push({ column: c, reason: "movement", note: `${showHeader(cell(rows[headerRow], c))} — ${what}` });
+  let movements: ColumnMapping["movements"];
+  if (fields.quantity === undefined && locationColumns.length === 0 && movementStart.length > 0) {
+    movements = { start: movementStart[0], add: movementAdd, subtract: movementSubtract };
+    movementStart.slice(1).forEach((c) => describe(c, "an earlier count, not used"));
+  } else {
+    movementStart.forEach((c) => describe(c, "the starting count, not what's on hand now"));
+    movementAdd.forEach((c) => describe(c, "stock received, not a place"));
+    movementSubtract.forEach((c) => describe(c, "stock used up or lost, not a place"));
+  }
+  endingColumns.slice(1).forEach((c) =>
+    ignoredColumns.push({ column: c, reason: "noise", note: `${showHeader(cell(rows[headerRow], c))} — a second count column; used the first one` }),
+  );
+
+  return {
+    headerRow,
+    fields,
+    locationColumns,
+    categoryColumns,
+    ...(movements ? { movements } : {}),
+    ...(ignoredColumns.length ? { ignoredColumns: ignoredColumns.sort((a, b) => a.column - b.column) } : {}),
+  };
+}
+
+/** Does this heading name a physical place (shelf, drawer, register, van…)? */
+export function isPlaceName(label: string): boolean {
+  return LOCATION_WORDS.test(label);
 }
 
 // ---------- Row parsing ----------
 
 const LOCATION_WORDS =
-  /\b(shelf|shelves|drawer|drawers|cabinet|cabinent|cabinets|register|counter|closet|storage|storeroom|stockroom|back ?room|room|floor|display|station|bin|rack|wall|desk|tower|cart|trolley|cupboard|fridge|basket|window|top|bottom|under|upstairs|downstairs|office|vanity|dispensary|color bar|colour bar|front|back)\b/i;
+  /\b(shelf|shelves|drawer|drawers|cabinet|cabinent|cabinets|register|counter|closet|storage|storeroom|stockroom|back ?room|room|floor|display|station|bin|rack|wall|desk|tower|cart|trolley|cupboard|fridge|basket|window|top|bottom|under|upstairs|downstairs|office|vanity|dispensary|color bar|colour bar|front|back|suite|chair|van|car|trunk|tote|caddy|bathroom|restroom|laundry|kitchen|lobby|reception|warehouse|garage|basement|attic|end ?cap|tray|bay|aisle|showroom|storefront|sink|shampoo bowl|bowl|salon)\b/i;
 
 function isAllCaps(text: string): boolean {
   const letters = text.replace(/[^a-zA-Z]/g, "");
@@ -517,6 +660,17 @@ function isAllCaps(text: string): boolean {
 
 function isDecorated(text: string): boolean {
   return /^[\s\-=_*~#>|]{2,}|[\s\-=_*~#<|:]{2,}$|:\s*$/.test(text) || /^[-=_*~#]{2,}|[-=_*~#]{2,}$/.test(text.trim());
+}
+
+const NOTE_START =
+  /^\s*(?:\*+\s*)?(note|notes|nb|n\.b\.|reminder|remember|please|pls|call|email|text|ask|tell|check|order|reorder|buy|pick up|don'?t|do not|need to|needs to|todo|to do|fyi|counted by|count by|updated|last updated|signed|initials?)\b/i;
+
+function looksLikeNote(text: string): boolean {
+  const words = text.trim().split(/\s+/);
+  if (splitCategoryFromName(text).category) return false; // "Order Up Gel - retail" is a product
+  if (/^\s*(note|nb|fyi|reminder)\s*[:\-]/i.test(text)) return true;
+  if (NOTE_START.test(text) && words.length >= 3) return true;
+  return words.length >= 5 && /[!?]$/.test(text.trim());
 }
 
 const TOTAL_ROW = /^(grand\s*)?(sub\s*-?\s*)?totals?\b/i;
@@ -553,6 +707,7 @@ export function parseSheet(rows: SheetRows, mapping: ColumnMapping, options: Par
   let sectionCategory: UsageCategory | null = null;
   let filledLocation: string | null = null;
   let filledCategory: UsageCategory | null = null;
+  let derivedRows = 0;
 
   const dataColumns = new Set<number>([
     ...Object.values(fields).filter((v): v is number => v !== undefined),
@@ -570,10 +725,41 @@ export function parseSheet(rows: SheetRows, mapping: ColumnMapping, options: Par
 
     const nameCell = cell(row, fields.name);
 
+    // Claude's reading of this row, when available, comes first.
+    const skipReason = options.skipRows?.[r];
+    if (skipReason !== undefined && !notSection.has(rowNumber)) {
+      skipped.push({ row: rowNumber, message: `Skipped "${filled[0].value}" — ${skipReason}` });
+      continue;
+    }
+    const hinted = options.headingRows?.[r];
+    if (hinted && !notSection.has(rowNumber)) {
+      const heading: SectionHeading = { row: rowNumber, text: filled.map((c) => c.value).join(" ") };
+      if (hinted.category) {
+        sectionCategory = hinted.category;
+        heading.category = hinted.category;
+      }
+      if (hinted.location) {
+        sectionLocation = noteLocation(cleanLocationName(hinted.location));
+        heading.location = sectionLocation;
+      }
+      filledLocation = null;
+      filledCategory = null;
+      sections.push(heading);
+      continue;
+    }
+
     // Repeated header row (multi-page exports) or totals.
     if (headerNameText && normalizeText(nameCell) === headerNameText) continue;
     if (TOTAL_ROW.test(nameCell) || (filled.length <= 2 && filled.some((c) => TOTAL_ROW.test(c.value)))) {
       skipped.push({ row: rowNumber, message: `Skipped totals row "${filled[0].value}"` });
+      continue;
+    }
+
+    // Notes to staff scribbled into the sheet: "remember to restock friday",
+    // "Note: count the van too", "*call SalonCentric*".
+    const onlyText = filled.length === 1 ? filled[0].value : null;
+    if (onlyText && !isStrictNumber(onlyText) && !notSection.has(rowNumber) && looksLikeNote(onlyText)) {
+      skipped.push({ row: rowNumber, message: `Skipped "${onlyText}" — looks like a note, not a product` });
       continue;
     }
 
@@ -621,6 +807,7 @@ export function parseSheet(rows: SheetRows, mapping: ColumnMapping, options: Par
       if (otherData.length > 0) skipped.push({ row: rowNumber, message: "No product name" });
       continue;
     }
+
 
     // "1. Shampoo", "3) Mask", "• Serum", "- Gel" → drop the list marker.
     const cleanName = nameCell.replace(/^\s*(?:\d{1,4}\s*[.)]\s+|[•·*▪►–—-]\s+)/, "").trim() || nameCell;
@@ -720,7 +907,17 @@ export function parseSheet(rows: SheetRows, mapping: ColumnMapping, options: Par
       return defaultLocation;
     };
 
-    const qty = fields.quantity !== undefined ? readQty(fields.quantity, "quantity") : undefined;
+    let qty = fields.quantity !== undefined ? readQty(fields.quantity, "quantity") : undefined;
+    const mv = mapping.movements;
+    if (qty === undefined && fields.quantity === undefined && mv) {
+      const start = readQty(mv.start, "starting count");
+      if (start !== undefined) {
+        const add = mv.add.reduce((sum, c) => sum + (readQty(c, "received") ?? 0), 0);
+        const sub = mv.subtract.reduce((sum, c) => sum + (readQty(c, "used") ?? 0), 0);
+        qty = Math.max(0, start + add - sub);
+        derivedRows += 1;
+      }
+    }
     const rp = fields.reorderPoint !== undefined ? readQty(fields.reorderPoint, "reorder point") : undefined;
     if (qty !== undefined || rp !== undefined) {
       const s = stockAt(fallbackLocation());
@@ -795,6 +992,19 @@ export function parseSheet(rows: SheetRows, mapping: ColumnMapping, options: Par
         if (stock.reorderPoint !== undefined) existing.reorderPoint = stock.reorderPoint;
       }
     }
+  }
+
+  if (derivedRows > 0 && mapping.movements) {
+    const name = (c: number) => showHeader(cell(rows[mapping.headerRow], c));
+    const formula = [
+      name(mapping.movements.start),
+      ...mapping.movements.add.map((c) => `+ ${name(c)}`),
+      ...mapping.movements.subtract.map((c) => `− ${name(c)}`),
+    ].join(" ");
+    notes.unshift({
+      row: mapping.headerRow + 1,
+      message: `No ending count column, so on-hand was worked out as ${formula} for ${derivedRows} row${derivedRows === 1 ? "" : "s"}`,
+    });
   }
 
   return {

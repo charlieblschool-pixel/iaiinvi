@@ -25,6 +25,12 @@ import {
   type SheetRows,
 } from "@/lib/import-parser";
 import {
+  mappingFromAnalysis,
+  type ColumnExplanation,
+  type RowHints,
+} from "@/lib/sheet-analysis-mapping";
+import type { SheetAnalysis } from "@/lib/sheet-analyst";
+import {
   planImport,
   type ExistingLocation,
   type ExistingProduct,
@@ -123,6 +129,12 @@ export function ImportForm({
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [dragging, setDragging] = useState(false);
   const [defaultLocationTouched, setDefaultLocationTouched] = useState(false);
+  // Claude's reading of each sheet, and whether it's the one in use.
+  const [ai, setAi] = useState<Record<number, AiState>>({});
+  const [ruleMappings, setRuleMappings] = useState<ColumnMapping[]>([]);
+  // Tabs whose columns the user adjusted by hand — Claude won't overwrite those.
+  const touched = useRef<Record<number, boolean>>({});
+  const loadId = useRef(0);
   const knownLocationNames = locations.map((l) => l.name);
 
   function reset() {
@@ -133,8 +145,78 @@ export function ImportForm({
     setNotSectionRows({});
     setLocationRenames({});
     setDefaultLocationTouched(false);
+    setAi({});
+    setRuleMappings([]);
+    touched.current = {};
+    loadId.current += 1;
     setError(null);
     setOutcome(null);
+  }
+
+  /** Ask Claude to read each sheet; its reading replaces the rule-based guess. */
+  async function askClaude(workbook: Sheet[], id: number) {
+    setAi(Object.fromEntries(workbook.map((_, i) => [i, { status: "reading" } as AiState])));
+    await Promise.all(
+      workbook.slice(0, 8).map(async (sheet, i) => {
+        let next: AiState = { status: "failed" };
+        try {
+          const res = await fetch("/api/import/analyze", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              sheetName: sheet.name,
+              rows: sheet.rows.slice(0, 250).map((r) => r.slice(0, 40).map((c) => c.slice(0, 500))),
+              knownLocations: knownLocationNames,
+            }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (res.status === 503 && data.available === false) {
+            next = { status: "off" };
+          } else if (res.ok && data.analysis) {
+            const reading = mappingFromAnalysis(data.analysis as SheetAnalysis, sheet.rows, knownLocationNames);
+            next = reading
+              ? {
+                  status: "done",
+                  summary: (data.analysis as SheetAnalysis).summary,
+                  mapping: reading.mapping,
+                  hints: reading.hints,
+                  explanations: reading.explanations,
+                  applied: true,
+                }
+              : { status: "failed", message: "Claude couldn't find a product column — using the standard reader." };
+          } else {
+            next = { status: "failed", message: data.error };
+          }
+        } catch {
+          next = { status: "failed" };
+        }
+        if (loadId.current !== id) return; // a different file was loaded meanwhile
+        setAi((prev) => (prev[i]?.status === "skipped" ? prev : { ...prev, [i]: next }));
+        if (next.status === "done") {
+          const reading = next;
+          if (touched.current[i]) {
+            setAi((prev) => ({ ...prev, [i]: { ...reading, applied: false } }));
+          } else {
+            setMappings((prev) => prev.map((m, j) => (j === i ? reading.mapping : m)));
+          }
+        }
+      }),
+    );
+    workbook.slice(8).forEach((_, k) =>
+      setAi((prev) => ({ ...prev, [k + 8]: { status: "failed", message: "Only the first 8 tabs are read by Claude." } })),
+    );
+  }
+
+  function useStandardReader(i: number) {
+    setAi((prev) => ({ ...prev, [i]: { ...prev[i], applied: false } as AiState }));
+    setMappings((prev) => prev.map((m, j) => (j === i ? ruleMappings[i] : m)));
+  }
+
+  function useClaudeReading(i: number) {
+    const state = ai[i];
+    if (state?.status !== "done") return;
+    setAi((prev) => ({ ...prev, [i]: { ...state, applied: true } }));
+    setMappings((prev) => prev.map((m, j) => (j === i ? state.mapping : m)));
   }
 
   async function handleFile(file: File) {
@@ -157,7 +239,10 @@ export function ImportForm({
       }
       setFileName(file.name);
       setSheets(workbook);
-      setMappings(workbook.map((s) => guessMapping(s.rows, knownLocationNames)));
+      const guessed = workbook.map((s) => guessMapping(s.rows, knownLocationNames));
+      setMappings(guessed);
+      setRuleMappings(guessed);
+      void askClaude(workbook, loadId.current);
       // Several tabs named like places ("Floor", "Cabinet") → one tab per location.
       setSheetIndex(
         workbook.length > 1 && workbook.every((s) => isMeaningfulTabName(s.name)) ? ALL_SHEETS : 0,
@@ -182,6 +267,7 @@ export function ImportForm({
         categoryOverrides: overrides,
         notSectionRows: notSectionRows[i],
         rowNumbers: sheets[i].rowNumbers,
+        ...(aiHints(ai[i]) ?? {}),
       });
     if (sheetIndex === ALL_SHEETS) {
       return mergeParseResults(
@@ -194,7 +280,7 @@ export function ImportForm({
         ? cleanLocationName(tab.name)
         : defaultLocation;
     return run(sheetIndex, tabLocation);
-  }, [sheets, mappings, sheetIndex, defaultLocation, defaultLocationTouched, overrides, notSectionRows]);
+  }, [sheets, mappings, sheetIndex, defaultLocation, defaultLocationTouched, overrides, notSectionRows, ai]);
 
   const products: ImportProduct[] = useMemo(() => {
     if (!parsed) return [];
@@ -260,7 +346,10 @@ export function ImportForm({
   const updateCount = plan.products.length - newCount;
   const backbarCount = parsed.products.filter((p) => p.category === BACKBAR).length;
   const retailCount = parsed.products.filter((p) => p.category === RETAIL).length;
-  const canImport = parsed.products.length > 0 && needsCategory.length === 0 && !submitting;
+  const activeTabs = sheetIndex === ALL_SHEETS ? sheets.map((_, i) => i) : [sheetIndex];
+  const claudeReading = activeTabs.some((i) => ai[i]?.status === "reading");
+  const canImport =
+    parsed.products.length > 0 && needsCategory.length === 0 && !submitting && !claudeReading;
 
   function setCategory(nameKeys: string[], category: UsageCategory) {
     setOverrides((prev) => {
@@ -303,6 +392,21 @@ export function ImportForm({
           Choose a different file
         </Button>
       </Card>
+
+      <ClaudeCard
+        tabs={activeTabs.map((i) => ({ index: i, name: sheets[i].name, state: ai[i] }))}
+        rows={sheets}
+        mappings={mappings}
+        onUseStandard={useStandardReader}
+        onUseClaude={useClaudeReading}
+        onSkip={() =>
+          setAi((prev) => {
+            const next = { ...prev };
+            for (const i of activeTabs) if (next[i]?.status === "reading") next[i] = { status: "skipped" };
+            return next;
+          })
+        }
+      />
 
       {/* Summary */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -394,7 +498,10 @@ export function ImportForm({
           knownLocationNames={knownLocationNames}
           rows={sheets[sheetIndex].rows}
           mapping={mappings[sheetIndex]}
-          onChange={(m) => setMappings((prev) => prev.map((x, i) => (i === sheetIndex ? m : x)))}
+          onChange={(m) => {
+            touched.current[sheetIndex] = true;
+            setMappings((prev) => prev.map((x, i) => (i === sheetIndex ? m : x)));
+          }}
         />
       )}
 
@@ -406,6 +513,8 @@ export function ImportForm({
           <p className="text-sm text-foreground-muted">
             {error ? (
               <span className="text-status-bad">{error}</span>
+            ) : claudeReading ? (
+              <span className="text-brand-light">Claude is reading your sheet — one moment…</span>
             ) : needsCategory.length > 0 ? (
               <span className="text-status-warn">
                 Choose Backbar or Retail for {needsCategory.length} product
@@ -421,6 +530,8 @@ export function ImportForm({
           <Button onClick={handleImport} disabled={!canImport}>
             {submitting
               ? "Importing…"
+              : claudeReading
+                ? "Reading…"
               : `Import ${parsed.products.length} product${parsed.products.length === 1 ? "" : "s"}`}
           </Button>
         </div>
@@ -928,7 +1039,8 @@ function MappingCard({
     (c) =>
       !Object.values(mapping.fields).includes(c.index) &&
       !locationCols.has(c.index) &&
-      !categoryCols.has(c.index),
+      !categoryCols.has(c.index) &&
+      !mapping.ignoredColumns?.some((ig) => ig.column === c.index),
   );
 
   function setField(field: FieldKey, value: string) {
@@ -942,6 +1054,9 @@ function MappingCard({
       fields,
       locationColumns: mapping.locationColumns.filter((l) => l.column !== index),
       categoryColumns: mapping.categoryColumns.filter((c) => c.column !== index),
+      ignoredColumns: mapping.ignoredColumns?.filter((ig) => ig.column !== index),
+      // Choosing a real count column makes the start/received/used maths unnecessary.
+      movements: field === "quantity" && index !== undefined ? undefined : mapping.movements,
     });
   }
 
@@ -1005,6 +1120,55 @@ function MappingCard({
             </label>
           ))}
         </div>
+
+        {(mapping.ignoredColumns?.length ?? 0) > 0 && (
+          <div className="mt-6">
+            <p className="text-xs font-medium uppercase tracking-wider text-foreground-muted">
+              Left out on purpose
+            </p>
+            <p className="mt-1 text-sm text-foreground-muted">
+              These columns have numbers but aren&rsquo;t places — like starting counts, stock
+              received, used or wasted. They aren&rsquo;t counted as locations.
+            </p>
+            <ul className="mt-2 flex flex-col divide-y divide-border-hairline rounded-lg border border-border-hairline text-sm">
+              {mapping.ignoredColumns!.map((ig) => (
+                <li key={ig.column} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+                  <span className="min-w-0">
+                    <span className="font-medium">{columnName(rows, mapping, ig.column)}</span>{" "}
+                    <span className="text-foreground-muted">
+                      {ig.note.includes(" — ") ? ig.note.split(" — ").slice(1).join(" — ") : ig.note}
+                    </span>
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      onChange({
+                        ...mapping,
+                        ignoredColumns: mapping.ignoredColumns!.filter((x) => x.column !== ig.column),
+                        movements:
+                          mapping.movements &&
+                          [mapping.movements.start, ...mapping.movements.add, ...mapping.movements.subtract].includes(ig.column)
+                            ? undefined
+                            : mapping.movements,
+                        locationColumns: [
+                          ...mapping.locationColumns,
+                          {
+                            column: ig.column,
+                            location: cleanLocationName(columnName(rows, mapping, ig.column)),
+                            kind: "onHand",
+                          },
+                        ],
+                      })
+                    }
+                  >
+                    It&rsquo;s a location — count it
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         <div className="mt-6">
           <p className="text-xs font-medium uppercase tracking-wider text-foreground-muted">
@@ -1145,5 +1309,145 @@ function ImportDone({ outcome, onAgain }: { outcome: Outcome; onAgain: () => voi
         </Button>
       </div>
     </Card>
+  );
+}
+
+// ---------- Claude's reading ----------
+
+type AiState =
+  | { status: "reading" | "off" | "skipped" }
+  | { status: "failed"; message?: string }
+  | {
+      status: "done";
+      summary: string;
+      mapping: ColumnMapping;
+      hints: RowHints;
+      explanations: ColumnExplanation[];
+      applied: boolean;
+    };
+
+function aiHints(state: AiState | undefined): Partial<RowHints> | null {
+  if (state?.status !== "done" || !state.applied) return null;
+  return state.hints;
+}
+
+const ROLE_LABEL: Record<string, string> = {
+  product_name: "Product name",
+  backbar_or_retail: "Backbar / Retail",
+  location_name: "Location",
+  on_hand: "On hand (the count)",
+  reorder_point: "Reorder point",
+  brand: "Brand",
+  vendor: "Vendor",
+  unit: "Unit",
+  case_pack: "Case pack",
+  unit_cost: "Unit cost",
+  vendor_sku: "Vendor SKU",
+  invii_code: "invii code",
+  location_on_hand: "Location count",
+  location_reorder_point: "Location reorder point",
+  backbar_on_hand: "Backbar count",
+  retail_on_hand: "Retail count",
+  starting_count: "Starting count",
+  received: "Received",
+  used_or_lost: "Used / lost",
+  ignore: "Not used",
+};
+
+function ClaudeCard({
+  tabs,
+  rows,
+  mappings,
+  onUseStandard,
+  onUseClaude,
+  onSkip,
+}: {
+  tabs: { index: number; name: string; state: AiState | undefined }[];
+  rows: Sheet[];
+  mappings: ColumnMapping[];
+  onUseStandard: (i: number) => void;
+  onUseClaude: (i: number) => void;
+  onSkip: () => void;
+}) {
+  const visible = tabs.filter((t) => t.state && t.state.status !== "off");
+  if (visible.length === 0) return null;
+
+  if (visible.some((t) => t.state?.status === "reading")) {
+    return (
+      <Card className="flex flex-wrap items-center justify-between gap-3 border-brand/40 p-5" role="status" aria-live="polite">
+        <div className="flex items-center gap-3">
+          <span className="relative flex h-2.5 w-2.5" aria-hidden>
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand-light opacity-60" />
+            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-brand-light" />
+          </span>
+          <div>
+            <p className="font-medium">Claude is reading your sheet</p>
+            <p className="text-sm text-foreground-muted">
+              Checking every column and row — which ones are places, which are counts, and which to leave out.
+            </p>
+          </div>
+        </div>
+        <button onClick={onSkip} className="text-sm text-foreground-muted underline-offset-2 hover:text-foreground hover:underline">
+          Skip and use the standard reader
+        </button>
+      </Card>
+    );
+  }
+
+  return (
+    <>
+      {visible.map(({ index, name, state }) => {
+        if (!state || state.status === "skipped" || state.status === "reading") return null;
+        if (state.status === "failed") {
+          return (
+            <p key={index} className="px-1 text-xs text-foreground-muted">
+              {tabs.length > 1 ? `${name}: ` : ""}
+              {state.message ?? "Claude couldn't read this sheet — using the standard reader."}
+            </p>
+          );
+        }
+        if (state.status !== "done") return null;
+        const sheet = rows[index];
+        const mapping = mappings[index];
+        return (
+          <Card key={index} className="border-brand/40 p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs font-medium uppercase tracking-wider text-brand-light">
+                  {state.applied ? "Read by Claude" : "Claude's reading (not in use)"}
+                  {tabs.length > 1 ? ` · ${name}` : ""}
+                </p>
+                <p className="mt-1.5 text-sm">{state.summary}</p>
+              </div>
+              {state.applied ? (
+                <button onClick={() => onUseStandard(index)} className="text-xs text-foreground-muted hover:text-foreground hover:underline">
+                  Use the standard reader instead
+                </button>
+              ) : (
+                <Button size="sm" variant="secondary" onClick={() => onUseClaude(index)}>
+                  Use Claude&rsquo;s reading
+                </Button>
+              )}
+            </div>
+            <details className="group mt-3">
+              <summary className="cursor-pointer list-none text-sm text-brand-light hover:underline">
+                What each column means <span aria-hidden className="inline-block transition-transform group-open:rotate-180">▾</span>
+              </summary>
+              <ul className="mt-2 flex flex-col divide-y divide-border-hairline text-sm">
+                {state.explanations.map((e) => (
+                  <li key={e.column} className="grid gap-1 py-2 sm:grid-cols-[12rem_10rem_1fr] sm:gap-3">
+                    <span className="truncate font-medium">{columnName(sheet.rows, mapping, e.column)}</span>
+                    <span className={cn("text-xs sm:text-sm", e.role === "ignore" ? "text-foreground-muted" : "text-brand-light")}>
+                      {ROLE_LABEL[e.role] ?? e.role}
+                    </span>
+                    <span className="text-foreground-muted">{e.explanation}</span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          </Card>
+        );
+      })}
+    </>
   );
 }
